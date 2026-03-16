@@ -422,8 +422,7 @@ export class BarnScene extends Phaser.Scene {
           break;
         case 'bust_triggered':
           bustTriggered = true;
-          bustMessage =
-            event.bustType === 'farmer' ? 'FARMER WOKE UP!' : 'BARN OVERWHELMED!';
+          bustMessage = event.bustType === 'farmer' ? 'FARMER WOKE UP!' : 'BARN OVERWHELMED!';
           break;
         case 'night_scored':
           nightScored = event.summary;
@@ -487,7 +486,11 @@ export class BarnScene extends Phaser.Scene {
 
   // === Card rendering ===
 
-  private renderCardInSlot(card: CardInstance, slotIndex: number, animated: boolean): Phaser.GameObjects.Container {
+  private renderCardInSlot(
+    card: CardInstance,
+    slotIndex: number,
+    animated: boolean,
+  ): Phaser.GameObjects.Container {
     const state = gameStore.getState();
     const slotRects = getDynamicSlotRects(state.capacity);
     const slot = slotRects[slotIndex];
@@ -498,10 +501,7 @@ export class BarnScene extends Phaser.Scene {
 
     // Card background
     const cardBgTexture = animalDef.noisy ? TEXTURES.CARD_NOISY : TEXTURES.CARD_PARCHMENT;
-    const cardBg = this.add
-      .image(0, 0, cardBgTexture)
-      .setOrigin(0)
-      .setDisplaySize(slot.w, slot.h);
+    const cardBg = this.add.image(0, 0, cardBgTexture).setOrigin(0).setDisplaySize(slot.w, slot.h);
     container.add(cardBg);
 
     // Animal sprite (pixel art scaled 2x, centered in card)
@@ -523,7 +523,10 @@ export class BarnScene extends Phaser.Scene {
 
     // Resource badges
     if (animalDef.mischief !== 0) {
-      const badgeMischief = this.add.image(4, 4, TEXTURES.BADGE_MISCHIEF).setOrigin(0).setScale(0.5);
+      const badgeMischief = this.add
+        .image(4, 4, TEXTURES.BADGE_MISCHIEF)
+        .setOrigin(0)
+        .setScale(0.5);
       container.add(badgeMischief);
       const mischiefVal = this.add
         .text(20, 6, `${animalDef.mischief}`, {
@@ -536,7 +539,10 @@ export class BarnScene extends Phaser.Scene {
     }
 
     if (animalDef.hay !== 0) {
-      const badgeHay = this.add.image(slot.w - 32, 4, TEXTURES.BADGE_HAY).setOrigin(0).setScale(0.5);
+      const badgeHay = this.add
+        .image(slot.w - 32, 4, TEXTURES.BADGE_HAY)
+        .setOrigin(0)
+        .setScale(0.5);
       container.add(badgeHay);
       const hayVal = this.add
         .text(slot.w - 16, 6, `${animalDef.hay}`, {
@@ -695,9 +701,7 @@ export class BarnScene extends Phaser.Scene {
     const overlay = this.add.container(bounds.x, bounds.y);
 
     // Semi-transparent background
-    const bg = this.add
-      .rectangle(0, 0, bounds.w, bounds.h, 0x000000, 0.75)
-      .setOrigin(0);
+    const bg = this.add.rectangle(0, 0, bounds.w, bounds.h, 0x000000, 0.75).setOrigin(0);
     overlay.add(bg);
 
     // Bust message
@@ -734,15 +738,19 @@ export class BarnScene extends Phaser.Scene {
       .setOrigin(0.5);
     overlay.add(continueText);
 
-    continueBtn.on('pointerdown', () => {
-      overlay.destroy();
-      this.bustOverlay = null;
-      const currentSession = gameStore.getState();
-      const summary = this.bustOverlaySummary ?? currentSession.currentNight?.summary;
-      if (summary) {
-        this.showNightSummaryOverlay(summary, currentSession);
-      }
-    }, this);
+    continueBtn.on(
+      'pointerdown',
+      () => {
+        overlay.destroy();
+        this.bustOverlay = null;
+        const currentSession = gameStore.getState();
+        const summary = this.bustOverlaySummary ?? currentSession.currentNight?.summary;
+        if (summary) {
+          this.showNightSummaryOverlay(summary, currentSession);
+        }
+      },
+      this,
+    );
 
     // Fade in
     overlay.setAlpha(0);
@@ -764,9 +772,7 @@ export class BarnScene extends Phaser.Scene {
     const overlay = this.add.container(bounds.x, bounds.y);
 
     // Semi-transparent background
-    const bg = this.add
-      .rectangle(0, 0, bounds.w, bounds.h, 0x000000, 0.85)
-      .setOrigin(0);
+    const bg = this.add.rectangle(0, 0, bounds.w, bounds.h, 0x000000, 0.85).setOrigin(0);
     overlay.add(bg);
 
     // Title
@@ -848,10 +854,15 @@ export class BarnScene extends Phaser.Scene {
     overlay.add(totalLine);
 
     const hayLine = this.add
-      .text(20, totalMischiefY + 24, `Hay Earned: ${summary.hayEarned}  Cost: ${summary.hayCost}  Net Hay: ${summary.totalHay}`, {
-        ...TEXT_STYLE_LIGHT,
-        fontSize: '12px',
-      })
+      .text(
+        20,
+        totalMischiefY + 24,
+        `Hay Earned: ${summary.hayEarned}  Cost: ${summary.hayCost}  Net Hay: ${summary.totalHay}`,
+        {
+          ...TEXT_STYLE_LIGHT,
+          fontSize: '12px',
+        },
+      )
       .setOrigin(0);
     overlay.add(hayLine);
 
@@ -867,9 +878,7 @@ export class BarnScene extends Phaser.Scene {
     }
 
     // Penned up animal notification
-    const pennedUpEvents = session.currentNight?.bust
-      ? [session.currentNight.bust.card]
-      : [];
+    const pennedUpEvents = session.currentNight?.bust ? [session.currentNight.bust.card] : [];
     if (pennedUpEvents.length > 0) {
       const pennedCard = pennedUpEvents[0];
       const pennedDef = getAnimalDef(pennedCard.animalId);
@@ -908,9 +917,13 @@ export class BarnScene extends Phaser.Scene {
       .setOrigin(0.5);
     overlay.add(continueText);
 
-    continueBtn.on('pointerdown', () => {
-      this.scene.start(SceneKey.TradingPost);
-    }, this);
+    continueBtn.on(
+      'pointerdown',
+      () => {
+        this.scene.start(SceneKey.TradingPost);
+      },
+      this,
+    );
 
     this.summaryOverlay = overlay;
   }

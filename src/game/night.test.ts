@@ -68,7 +68,14 @@ describe('night', () => {
 
   it('triggers barn overwhelmed when animal count exceeds capacity', () => {
     let state = startNight({
-      deck: makeDeck(['BarnCat', 'BarnCat', 'BarnCat', 'PotBelliedPig', 'PotBelliedPig', 'BarnCat']),
+      deck: makeDeck([
+        'BarnCat',
+        'BarnCat',
+        'BarnCat',
+        'PotBelliedPig',
+        'PotBelliedPig',
+        'BarnCat',
+      ]),
       capacity: 5,
       nightNumber: 1,
     });

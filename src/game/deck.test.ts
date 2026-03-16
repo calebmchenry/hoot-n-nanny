@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { buildStartingDeck, createCardInstance, drawCard, parseSeedFromSearch, shuffleDeck } from './deck';
+import {
+  buildStartingDeck,
+  createCardInstance,
+  drawCard,
+  parseSeedFromSearch,
+  shuffleDeck,
+} from './deck';
 
 describe('deck', () => {
   it('builds the starter herd composition (4 cats, 4 goats, 2 pigs)', () => {
@@ -28,10 +34,14 @@ describe('deck', () => {
   it('supports named verification seeds with stable leading cards', () => {
     const { cards } = buildStartingDeck();
 
-    const warningOrder = shuffleDeck(cards, 'sprint2-warning').slice(0, 2).map((card) => card.animalId);
+    const warningOrder = shuffleDeck(cards, 'sprint2-warning')
+      .slice(0, 2)
+      .map((card) => card.animalId);
     expect(warningOrder).toEqual(['FeralGoat', 'FeralGoat']);
 
-    const bustOrder = shuffleDeck(cards, 'sprint2-farmer-bust').slice(0, 3).map((card) => card.animalId);
+    const bustOrder = shuffleDeck(cards, 'sprint2-farmer-bust')
+      .slice(0, 3)
+      .map((card) => card.animalId);
     expect(bustOrder).toEqual(['FeralGoat', 'FeralGoat', 'FeralGoat']);
   });
 

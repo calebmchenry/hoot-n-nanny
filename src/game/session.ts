@@ -122,7 +122,7 @@ export const startNextNight = (session: GameSession): GameSession => {
 
   const activePennedUpCard =
     activePennedUpCardId !== null
-      ? session.herd.find((card) => card.id === activePennedUpCardId) ?? null
+      ? (session.herd.find((card) => card.id === activePennedUpCardId) ?? null)
       : null;
 
   return {

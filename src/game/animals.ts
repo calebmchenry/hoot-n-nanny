@@ -152,7 +152,9 @@ export const SHOP_ANIMALS = [
   animalDefs.HoneyBee,
 ] as const;
 
-export const SHOP_ANIMAL_IDS = SHOP_ANIMALS.map((animal) => animal.id) as ReadonlyArray<ShopAnimalId>;
+export const SHOP_ANIMAL_IDS = SHOP_ANIMALS.map(
+  (animal) => animal.id,
+) as ReadonlyArray<ShopAnimalId>;
 
 export const ALL_ANIMALS = Object.values(animalDefs) as ReadonlyArray<AnimalDef>;
 
