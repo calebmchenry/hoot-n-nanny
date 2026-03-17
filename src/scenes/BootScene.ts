@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { LAYOUT, PALETTE, TEXTURES } from '../config/constants';
+import { EMOJI_MAP } from '../config/emojiMap';
 import {
   ASCII_PRINTABLE,
   GLYPH_DATA,
@@ -8,6 +9,7 @@ import {
   GLYPH_WIDTH,
 } from '../config/pixelFont';
 import { generateProceduralTextures } from '../rendering/proceduralTextures';
+import type { AnimalId } from '../game/types';
 import { SceneKey } from '../types';
 
 const maybeGenerateTexture = (
@@ -198,19 +200,81 @@ const generateShapeTextures = (scene: Phaser.Scene): void => {
   });
 };
 
+const EMOJI_TEXTURE_SIZE = 64;
+const EMOJI_FONT_SIZE = 48;
+const EMOJI_FONT_STACK = `"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif`;
+const EMOJI_FALLBACK_BG = '#8b6914';
+const EMOJI_FALLBACK_TEXT = '#f8f3e5';
+
+const hasCenterPixelContent = (ctx: CanvasRenderingContext2D): boolean => {
+  const sampleStart = EMOJI_TEXTURE_SIZE / 2 - 2;
+  const imageData = ctx.getImageData(sampleStart, sampleStart, 4, 4).data;
+  for (let i = 3; i < imageData.length; i += 4) {
+    if (imageData[i] > 0) {
+      return true;
+    }
+  }
+  return false;
+};
+
+const drawEmojiFallback = (ctx: CanvasRenderingContext2D, animalId: AnimalId): void => {
+  const center = EMOJI_TEXTURE_SIZE / 2;
+  ctx.clearRect(0, 0, EMOJI_TEXTURE_SIZE, EMOJI_TEXTURE_SIZE);
+  ctx.fillStyle = EMOJI_FALLBACK_BG;
+  ctx.beginPath();
+  ctx.arc(center, center, center - 4, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = EMOJI_FALLBACK_TEXT;
+  ctx.font = `bold ${EMOJI_FONT_SIZE - 8}px sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(animalId[0], center, center);
+};
+
+const generateEmojiTextures = (scene: Phaser.Scene): void => {
+  const animalIds = Object.keys(EMOJI_MAP) as AnimalId[];
+  for (const animalId of animalIds) {
+    let texture: Phaser.Textures.Texture | Phaser.Textures.CanvasTexture | null = null;
+
+    if (scene.textures.exists(animalId)) {
+      texture = scene.textures.get(animalId);
+    } else {
+      const canvas = document.createElement('canvas');
+      canvas.width = EMOJI_TEXTURE_SIZE;
+      canvas.height = EMOJI_TEXTURE_SIZE;
+
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        continue;
+      }
+
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.font = `${EMOJI_FONT_SIZE}px ${EMOJI_FONT_STACK}`;
+      ctx.fillText(EMOJI_MAP[animalId], EMOJI_TEXTURE_SIZE / 2, EMOJI_TEXTURE_SIZE / 2);
+
+      if (!hasCenterPixelContent(ctx)) {
+        drawEmojiFallback(ctx, animalId);
+      }
+
+      texture = scene.textures.addCanvas(animalId, canvas);
+    }
+
+    texture?.setFilter(Phaser.Textures.FilterMode.LINEAR);
+  }
+};
+
 export class BootScene extends Phaser.Scene {
   constructor() {
     super(SceneKey.Boot);
-  }
-
-  preload(): void {
-    this.load.atlas('animals', 'assets/animals.png', 'assets/animals.json');
   }
 
   create(): void {
     generateBitmapFont(this);
     generateProceduralTextures(this);
     generateShapeTextures(this);
+    generateEmojiTextures(this);
 
     this.scene.start(SceneKey.Barn);
   }

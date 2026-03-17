@@ -394,7 +394,7 @@ export class TradingPostScene extends Phaser.Scene {
     }
 
     const bg = this.add.image(0, 0, bgTexture).setOrigin(0);
-    const sprite = this.add.image(0, 0, 'animals', item.animalId).setOrigin(0.5);
+    const sprite = this.add.image(0, 0, item.animalId).setOrigin(0.5);
     const nameText = this.addBitmapText(0, 0, item.name, this.fontPx(10, ch), TEXT_DARK_TINT)
       .setOrigin(0.5, 0)
       .setMaxWidth(Math.max(36, pos.w - 8));

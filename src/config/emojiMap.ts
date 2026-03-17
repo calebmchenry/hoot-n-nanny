@@ -1,0 +1,27 @@
+import type { AnimalId } from '../game/types';
+
+export const EMOJI_MAP: Record<AnimalId, string> = {
+  BarnCat: '\u{1F431}',
+  FeralGoat: '\u{1F410}',
+  PotBelliedPig: '\u{1F437}',
+  Bunny: '\u{1F430}',
+  Hen: '\u{1F414}',
+  WildBoar: '\u{1F417}',
+  HermitCrab: '\u{1F980}',
+  DraftPony: '\u{1F434}',
+  StruttingPeacock: '\u{1F99A}',
+  MilkmaidGoat: '\u{1F410}',
+  HoneyBee: '\u{1F41D}',
+  Sheepdog: '\u{1F415}',
+  StableHand: '\u{1F9D1}\u{200D}\u{1F33E}',
+  BorderCollie: '\u{1F9AE}',
+  CheerfulLamb: '\u{1F40F}',
+  GoldenGoose: '\u{1FABF}',
+  GiantOx: '\u{1F402}',
+  Jackalope: '\u{1F407}',
+  Thunderbird: '\u{1F985}',
+  SilverMare: '\u{1F984}',
+  LuckyToad: '\u{1F438}',
+  GreatStag: '\u{1F98C}',
+  BarnDragon: '\u{1F409}',
+};

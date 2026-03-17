@@ -1180,10 +1180,10 @@ export class BarnScene extends Phaser.Scene {
       container.add(noisyLabel);
     }
 
-    // Animal sprite (pixel art scaled 2x, centered in card)
+    // Animal glyph texture centered in card
     const spriteY = animalDef.noisy ? slot.h / 2 - 2 : slot.h / 2 - 8;
     const sprite = this.add
-      .sprite(slot.w / 2, spriteY, 'animals', card.animalId)
+      .image(slot.w / 2, spriteY, card.animalId)
       .setOrigin(0.5)
       .setScale(2);
     container.add(sprite);
@@ -1425,7 +1425,7 @@ export class BarnScene extends Phaser.Scene {
 
     // Portrait frame
     const portrait = this.add
-      .sprite((24 + 36) * sx, (18 + 36) * sy, 'animals', card.animalId)
+      .image((24 + 36) * sx, (18 + 36) * sy, card.animalId)
       .setOrigin(0.5)
       .setScale(3 * Math.min(sx, sy));
     overlay.add(portrait);
@@ -1596,7 +1596,7 @@ export class BarnScene extends Phaser.Scene {
     overlay.add(cardBg);
 
     const sprite = this.add
-      .sprite(cx, cy, 'animals', previewCard.animalId)
+      .image(cx, cy, previewCard.animalId)
       .setOrigin(0.5)
       .setScale(Math.max(1.8, previewH / 40));
     overlay.add(sprite);
@@ -2466,7 +2466,7 @@ export class BarnScene extends Phaser.Scene {
       legendaryCards.forEach((card, i) => {
         const x = startX + i * spacing;
         const sprite = this.add
-          .sprite(x, Math.round((340 / LAYOUT.CANVAS.REF_HEIGHT) * ch), 'animals', card.animalId)
+          .image(x, Math.round((340 / LAYOUT.CANVAS.REF_HEIGHT) * ch), card.animalId)
           .setOrigin(0.5)
           .setScale(Math.max(2.2, (3 * ch) / LAYOUT.CANVAS.REF_HEIGHT));
         overlay.add(sprite);
