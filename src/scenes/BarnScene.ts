@@ -10,6 +10,8 @@ import {
   getActionBarPosition,
   getOverlayBounds,
   getInfoPanelBounds,
+  scaledFont,
+  type Rect,
 } from './barnLayout';
 import { SceneKey } from '../types';
 import * as gameStore from '../game/gameStore';
@@ -53,8 +55,17 @@ const setDomAttr = (attr: string, value: string): void => {
 };
 
 export class BarnScene extends Phaser.Scene {
+  // Viewport
+  private pendingResize: { cw: number; ch: number } | null = null;
+
   // Environment
+  private barnBackground!: Phaser.GameObjects.Image;
+  private rafter!: Phaser.GameObjects.Image;
+  private floorStraw!: Phaser.GameObjects.Image;
+  private farmhouseImage!: Phaser.GameObjects.Image;
+  private deckStack!: Phaser.GameObjects.Image;
   private windowGlow!: Phaser.GameObjects.Image;
+  private noiseLabel!: Phaser.GameObjects.Text;
   private windowGlowTween: Phaser.Tweens.Tween | null = null;
 
   // Slots
@@ -84,6 +95,7 @@ export class BarnScene extends Phaser.Scene {
   private bustOverlay: Phaser.GameObjects.Container | null = null;
   private summaryOverlay: Phaser.GameObjects.Container | null = null;
   private infoPanelOverlay: Phaser.GameObjects.Container | null = null;
+  private infoPanelDismissArea: Phaser.GameObjects.Rectangle | null = null;
   private abilityOverlay: Phaser.GameObjects.Container | null = null;
   private winOverlay: Phaser.GameObjects.Container | null = null;
 
@@ -98,6 +110,28 @@ export class BarnScene extends Phaser.Scene {
 
   constructor() {
     super(SceneKey.Barn);
+  }
+
+  private getCanvasSize(): { cw: number; ch: number } {
+    return {
+      cw: Math.round(this.scale.width),
+      ch: Math.round(this.scale.height),
+    };
+  }
+
+  private fontPx(base: number, ch: number): string {
+    return `${scaledFont(base, ch)}px`;
+  }
+
+  private resizeOverlayContainer(container: Phaser.GameObjects.Container, bounds: Rect): void {
+    const baseW = container.getData('baseW') as number | undefined;
+    const baseH = container.getData('baseH') as number | undefined;
+    if (!baseW || !baseH) {
+      return;
+    }
+
+    container.setPosition(bounds.x, bounds.y);
+    container.setScale(bounds.w / baseW, bounds.h / baseH);
   }
 
   create(): void {
@@ -123,33 +157,58 @@ export class BarnScene extends Phaser.Scene {
     this.secondaryButtonText = null;
     this.windowGlowTween = null;
     this.actionBarVisible = true;
+    this.pendingResize = null;
+    this.infoPanelDismissArea = null;
 
     const state = gameStore.getState();
     const capacity = state.capacity;
+    const { cw, ch } = this.getCanvasSize();
 
     // Set DOM attributes
     setDomAttr('data-scene', 'Barn');
     this.updateDomPhase(state);
 
     // === Environment rendering ===
-    this.add.image(0, 0, TEXTURES.BARN_PLANK).setOrigin(0);
-    this.add.image(0, 0, TEXTURES.RAFTER).setOrigin(0);
-    this.add.image(0, LAYOUT.BARN.FLOOR_Y, TEXTURES.FLOOR_STRAW).setOrigin(0);
+    this.barnBackground = this.add
+      .image(0, 0, TEXTURES.BARN_PLANK)
+      .setOrigin(0)
+      .setDisplaySize(cw, ch);
+    const rafterHeight = Math.max(30, Math.round((42 / LAYOUT.CANVAS.REF_HEIGHT) * ch));
+    this.rafter = this.add
+      .image(0, 0, TEXTURES.RAFTER)
+      .setOrigin(0)
+      .setDisplaySize(cw, rafterHeight);
+    const floorTop = Math.round((LAYOUT.BARN.FLOOR_Y / LAYOUT.CANVAS.REF_HEIGHT) * ch);
+    const floorHeight = Math.max(
+      80,
+      Math.round((LAYOUT.BARN.FLOOR_HEIGHT / LAYOUT.CANVAS.REF_HEIGHT) * ch),
+    );
+    this.floorStraw = this.add
+      .image(0, floorTop, TEXTURES.FLOOR_STRAW)
+      .setOrigin(0)
+      .setDisplaySize(cw, floorHeight);
 
     // Farmhouse
-    const farmhouseRect = getFarmhouseRect(capacity);
-    this.add.image(farmhouseRect.x, farmhouseRect.y, TEXTURES.FARMHOUSE).setOrigin(0);
+    const farmhouseRect = getFarmhouseRect(capacity, cw, ch);
+    this.farmhouseImage = this.add
+      .image(farmhouseRect.x, farmhouseRect.y, TEXTURES.FARMHOUSE)
+      .setOrigin(0)
+      .setDisplaySize(farmhouseRect.w, farmhouseRect.h);
 
     // Window glow (initially invisible)
-    const windowRect = getFarmhouseWindowRect(capacity);
+    const windowRect = getFarmhouseWindowRect(capacity, cw, ch);
     this.windowGlow = this.add
       .image(windowRect.x, windowRect.y, TEXTURES.WINDOW_GLOW)
       .setOrigin(0)
+      .setDisplaySize(windowRect.w, windowRect.h)
       .setAlpha(0);
 
     // Deck stack
-    const deckRect = getDeckStackPosition(capacity);
-    this.add.image(deckRect.x, deckRect.y, TEXTURES.DECK_BACK).setOrigin(0);
+    const deckRect = getDeckStackPosition(capacity, cw, ch);
+    this.deckStack = this.add
+      .image(deckRect.x, deckRect.y, TEXTURES.DECK_BACK)
+      .setOrigin(0)
+      .setDisplaySize(deckRect.w, deckRect.h);
 
     // Deck remaining count
     const night = state.currentNight;
@@ -157,89 +216,102 @@ export class BarnScene extends Phaser.Scene {
     this.deckCountText = this.add
       .text(deckRect.x + deckRect.w / 2, deckRect.y + deckRect.h / 2, `${deckRemaining}`, {
         ...TEXT_STYLE_LIGHT,
-        fontSize: '16px',
+        fontSize: this.fontPx(16, ch),
         fontStyle: 'bold',
       })
       .setOrigin(0.5);
 
     // === Empty slot outlines ===
-    const slotRects = getDynamicSlotRects(capacity);
+    const slotRects = getDynamicSlotRects(capacity, cw, ch);
     this.slotImages = slotRects.map((rect) => {
-      return this.add.image(rect.x, rect.y, TEXTURES.SLOT_EMPTY).setOrigin(0);
+      return this.add
+        .image(rect.x, rect.y, TEXTURES.SLOT_EMPTY)
+        .setOrigin(0)
+        .setDisplaySize(rect.w, rect.h);
     });
 
     // === Resource banner ===
-    const bannerRect = getResourceBannerPosition(capacity);
+    const bannerRect = getResourceBannerPosition(capacity, cw, ch);
+    const labelOffsetX = Math.round((120 / LAYOUT.CANVAS.REF_WIDTH) * cw);
+    const legendaryOffsetX = Math.round((260 / LAYOUT.CANVAS.REF_WIDTH) * cw);
+    const hayOffsetY = Math.round((20 / LAYOUT.CANVAS.REF_HEIGHT) * ch);
+    const capacityOffsetY = Math.round((28 / LAYOUT.CANVAS.REF_HEIGHT) * ch);
+    const pennedOffsetY = Math.round((42 / LAYOUT.CANVAS.REF_HEIGHT) * ch);
     const nightNum = night ? night.nightNumber : state.nightNumber;
     this.nightText = this.add
       .text(bannerRect.x, bannerRect.y, `Night ${nightNum}`, {
         ...TEXT_STYLE_LIGHT,
-        fontSize: '18px',
+        fontSize: this.fontPx(18, ch),
         fontStyle: 'bold',
       })
       .setOrigin(0);
 
     this.mischiefText = this.add
-      .text(bannerRect.x + 120, bannerRect.y, `Mischief: ${state.mischief}`, {
+      .text(bannerRect.x + labelOffsetX, bannerRect.y, `Mischief: ${state.mischief}`, {
         ...TEXT_STYLE_LIGHT,
-        fontSize: '14px',
+        fontSize: this.fontPx(14, ch),
       })
       .setOrigin(0);
 
     this.hayText = this.add
-      .text(bannerRect.x + 120, bannerRect.y + 20, `Hay: ${state.hay}`, {
+      .text(bannerRect.x + labelOffsetX, bannerRect.y + hayOffsetY, `Hay: ${state.hay}`, {
         ...TEXT_STYLE_LIGHT,
-        fontSize: '14px',
+        fontSize: this.fontPx(14, ch),
       })
       .setOrigin(0);
 
     // Legendary tracker
     const legendaryCount = night?.legendaryCount ?? 0;
     this.legendaryText = this.add
-      .text(bannerRect.x + 260, bannerRect.y, `Legendary: ${legendaryCount}/3`, {
+      .text(bannerRect.x + legendaryOffsetX, bannerRect.y, `Legendary: ${legendaryCount}/3`, {
         ...TEXT_STYLE_LIGHT,
-        fontSize: '12px',
+        fontSize: this.fontPx(12, ch),
       })
       .setOrigin(0);
 
     // === Noise meter ===
-    const noiseRect = getNoiseMeterPosition(capacity);
-    this.add
+    const noiseRect = getNoiseMeterPosition(capacity, cw, ch);
+    this.noiseLabel = this.add
       .text(noiseRect.x, noiseRect.y, 'Noise:', {
         ...TEXT_STYLE_LIGHT,
-        fontSize: '14px',
+        fontSize: this.fontPx(14, ch),
       })
       .setOrigin(0);
 
+    const dotSize = Math.max(14, Math.round((18 / LAYOUT.CANVAS.REF_HEIGHT) * ch));
+    const dotStartX = Math.round((60 / LAYOUT.CANVAS.REF_WIDTH) * cw);
+    const dotGap = Math.max(18, Math.round((28 / LAYOUT.CANVAS.REF_WIDTH) * cw));
+    const dotOffsetY = Math.round((4 / LAYOUT.CANVAS.REF_HEIGHT) * ch);
     const noisyCount = night ? night.noisyCount : 0;
     for (let i = 0; i < 3; i++) {
       const dotTexture = i < noisyCount ? TEXTURES.NOISE_DOT_FILLED : TEXTURES.NOISE_DOT_EMPTY;
       const dot = this.add
-        .image(noiseRect.x + 60 + i * 28, noiseRect.y + 4, dotTexture)
-        .setOrigin(0);
+        .image(noiseRect.x + dotStartX + i * dotGap, noiseRect.y + dotOffsetY, dotTexture)
+        .setOrigin(0)
+        .setDisplaySize(dotSize, dotSize);
       this.noiseDots.push(dot);
     }
 
     // === Capacity indicator ===
     const barnCount = night ? night.barn.length : 0;
     this.capacityText = this.add
-      .text(bannerRect.x, bannerRect.y + 28, `Barn: ${barnCount}/${capacity}`, {
+      .text(bannerRect.x, bannerRect.y + capacityOffsetY, `Barn: ${barnCount}/${capacity}`, {
         ...TEXT_STYLE_LIGHT,
-        fontSize: '14px',
+        fontSize: this.fontPx(14, ch),
       })
       .setOrigin(0);
 
     // === Penned up indicator ===
     this.pennedUpText = this.add
-      .text(bannerRect.x + 120, bannerRect.y + 42, '', {
+      .text(bannerRect.x + labelOffsetX, bannerRect.y + pennedOffsetY, '', {
         ...TEXT_STYLE_LIGHT,
-        fontSize: '12px',
+        fontSize: this.fontPx(12, ch),
       })
       .setOrigin(0);
     this.updatePennedUpIndicator(state);
 
     // === Action buttons (initial: single draw button) ===
-    this.createActionButtons(false);
+    this.createActionButtons(false, cw, ch);
 
     // If resuming a night with draws already made, render existing barn cards
     if (night && night.barn.length > 0) {
@@ -252,7 +324,7 @@ export class BarnScene extends Phaser.Scene {
         this.startWindowGlow();
       }
       if (!night.complete && !night.bust) {
-        this.createActionButtons(true);
+        this.createActionButtons(true, cw, ch);
       }
     }
 
@@ -264,6 +336,10 @@ export class BarnScene extends Phaser.Scene {
     } else if (night?.complete && night.summary) {
       this.showNightSummaryOverlay(night.summary, state);
     }
+
+    this.scale.on('resize', this.handleResize, this);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.shutdown, this);
+    this.applyLayout(cw, ch);
 
     // Signal game ready
     (window as Window & { __GAME_READY__?: boolean }).__GAME_READY__ = true;
@@ -311,7 +387,7 @@ export class BarnScene extends Phaser.Scene {
 
   // === Button creation ===
 
-  private createActionButtons(dual: boolean): void {
+  private createActionButtons(dual: boolean, cw?: number, ch?: number): void {
     if (this.primaryButton) {
       this.primaryButton.destroy();
       this.primaryButtonText.destroy();
@@ -323,8 +399,11 @@ export class BarnScene extends Phaser.Scene {
       this.secondaryButtonText = null;
     }
 
+    const canvasSize = this.getCanvasSize();
+    const width = cw ?? canvasSize.cw;
+    const height = ch ?? canvasSize.ch;
     const state = gameStore.getState();
-    const layout = getActionBarPosition(state.capacity, dual);
+    const layout = getActionBarPosition(state.capacity, dual, width, height);
 
     this.primaryButton = this.add
       .image(layout.primary.x, layout.primary.y, TEXTURES.BUTTON_PRIMARY)
@@ -340,7 +419,7 @@ export class BarnScene extends Phaser.Scene {
         primaryLabel,
         {
           ...TEXT_STYLE_LIGHT,
-          fontSize: '18px',
+          fontSize: this.fontPx(18, height),
           fontStyle: 'bold',
         },
       )
@@ -362,7 +441,7 @@ export class BarnScene extends Phaser.Scene {
           'CALL IT A NIGHT',
           {
             ...TEXT_STYLE_LIGHT,
-            fontSize: '18px',
+            fontSize: this.fontPx(18, height),
             fontStyle: 'bold',
           },
         )
@@ -412,6 +491,185 @@ export class BarnScene extends Phaser.Scene {
       this.secondaryButton.setVisible(true);
       this.secondaryButtonText!.setVisible(true);
     }
+  }
+
+  private updateActionButtonsLayout(capacity: number, cw: number, ch: number): void {
+    if (!this.primaryButton) {
+      return;
+    }
+
+    const dual = Boolean(this.secondaryButton && this.secondaryButtonText);
+    const layout = getActionBarPosition(capacity, dual, cw, ch);
+    this.primaryButton
+      .setPosition(layout.primary.x, layout.primary.y)
+      .setDisplaySize(layout.primary.w, layout.primary.h);
+    this.primaryButtonText
+      .setPosition(layout.primary.x + layout.primary.w / 2, layout.primary.y + layout.primary.h / 2)
+      .setStyle({ fontSize: this.fontPx(18, ch) });
+
+    if (dual && this.secondaryButton && this.secondaryButtonText && layout.secondary) {
+      this.secondaryButton
+        .setPosition(layout.secondary.x, layout.secondary.y)
+        .setDisplaySize(layout.secondary.w, layout.secondary.h);
+      this.secondaryButtonText
+        .setPosition(
+          layout.secondary.x + layout.secondary.w / 2,
+          layout.secondary.y + layout.secondary.h / 2,
+        )
+        .setStyle({ fontSize: this.fontPx(18, ch) });
+    }
+  }
+
+  private applyLayout(cw: number, ch: number): void {
+    const state = gameStore.getState();
+    const capacity = state.capacity;
+    const slotRects = getDynamicSlotRects(capacity, cw, ch);
+    const farmhouseRect = getFarmhouseRect(capacity, cw, ch);
+    const windowRect = getFarmhouseWindowRect(capacity, cw, ch);
+    const deckRect = getDeckStackPosition(capacity, cw, ch);
+    const bannerRect = getResourceBannerPosition(capacity, cw, ch);
+    const noiseRect = getNoiseMeterPosition(capacity, cw, ch);
+    const overlayBounds = getOverlayBounds(capacity, cw, ch);
+    const infoPanelBounds = getInfoPanelBounds(cw, ch);
+
+    this.barnBackground.setDisplaySize(cw, ch);
+
+    const rafterHeight = Math.max(30, Math.round((42 / LAYOUT.CANVAS.REF_HEIGHT) * ch));
+    this.rafter.setPosition(0, 0).setDisplaySize(cw, rafterHeight);
+
+    const floorTop = Math.round((LAYOUT.BARN.FLOOR_Y / LAYOUT.CANVAS.REF_HEIGHT) * ch);
+    const floorHeight = Math.max(
+      80,
+      Math.round((LAYOUT.BARN.FLOOR_HEIGHT / LAYOUT.CANVAS.REF_HEIGHT) * ch),
+    );
+    this.floorStraw.setPosition(0, floorTop).setDisplaySize(cw, floorHeight);
+
+    this.farmhouseImage
+      .setPosition(farmhouseRect.x, farmhouseRect.y)
+      .setDisplaySize(farmhouseRect.w, farmhouseRect.h);
+    this.windowGlow
+      .setPosition(windowRect.x, windowRect.y)
+      .setDisplaySize(windowRect.w, windowRect.h);
+    this.deckStack.setPosition(deckRect.x, deckRect.y).setDisplaySize(deckRect.w, deckRect.h);
+    this.deckCountText
+      .setPosition(deckRect.x + deckRect.w / 2, deckRect.y + deckRect.h / 2)
+      .setStyle({ fontSize: this.fontPx(16, ch) });
+
+    this.slotImages.forEach((slotImage, index) => {
+      const slot = slotRects[index];
+      if (!slot) {
+        slotImage.setVisible(false);
+        return;
+      }
+      slotImage.setVisible(true).setPosition(slot.x, slot.y).setDisplaySize(slot.w, slot.h);
+    });
+
+    this.cardContainers.forEach((container, index) => {
+      const slot = slotRects[index];
+      if (!slot) {
+        return;
+      }
+
+      const baseW = Number(container.getData('slotW')) || LAYOUT.SLOT.WIDTH;
+      const baseH = Number(container.getData('slotH')) || LAYOUT.SLOT.HEIGHT;
+      container.setPosition(slot.x, slot.y);
+      container.setScale(slot.w / baseW, slot.h / baseH);
+    });
+
+    const labelOffsetX = Math.round((120 / LAYOUT.CANVAS.REF_WIDTH) * cw);
+    const legendaryOffsetX = Math.round((260 / LAYOUT.CANVAS.REF_WIDTH) * cw);
+    const hayOffsetY = Math.round((20 / LAYOUT.CANVAS.REF_HEIGHT) * ch);
+    const capacityOffsetY = Math.round((28 / LAYOUT.CANVAS.REF_HEIGHT) * ch);
+    const pennedOffsetY = Math.round((42 / LAYOUT.CANVAS.REF_HEIGHT) * ch);
+
+    this.nightText
+      .setPosition(bannerRect.x, bannerRect.y)
+      .setStyle({ fontSize: this.fontPx(18, ch) });
+    this.mischiefText
+      .setPosition(bannerRect.x + labelOffsetX, bannerRect.y)
+      .setStyle({ fontSize: this.fontPx(14, ch) });
+    this.hayText
+      .setPosition(bannerRect.x + labelOffsetX, bannerRect.y + hayOffsetY)
+      .setStyle({ fontSize: this.fontPx(14, ch) });
+    this.legendaryText
+      .setPosition(bannerRect.x + legendaryOffsetX, bannerRect.y)
+      .setStyle({ fontSize: this.fontPx(12, ch) });
+    this.capacityText
+      .setPosition(bannerRect.x, bannerRect.y + capacityOffsetY)
+      .setStyle({ fontSize: this.fontPx(14, ch) });
+    this.pennedUpText
+      .setPosition(bannerRect.x + labelOffsetX, bannerRect.y + pennedOffsetY)
+      .setStyle({ fontSize: this.fontPx(12, ch) });
+
+    this.noiseLabel
+      .setPosition(noiseRect.x, noiseRect.y)
+      .setStyle({ fontSize: this.fontPx(14, ch) });
+    const dotSize = Math.max(14, Math.round((18 / LAYOUT.CANVAS.REF_HEIGHT) * ch));
+    const dotStartX = Math.round((60 / LAYOUT.CANVAS.REF_WIDTH) * cw);
+    const dotGap = Math.max(18, Math.round((28 / LAYOUT.CANVAS.REF_WIDTH) * cw));
+    const dotOffsetY = Math.round((4 / LAYOUT.CANVAS.REF_HEIGHT) * ch);
+    this.noiseDots.forEach((dot, index) => {
+      dot
+        .setPosition(noiseRect.x + dotStartX + index * dotGap, noiseRect.y + dotOffsetY)
+        .setDisplaySize(dotSize, dotSize);
+    });
+
+    this.updateActionButtonsLayout(capacity, cw, ch);
+    if (!this.actionBarVisible) {
+      this.hideActionBar();
+    }
+
+    if (this.infoPanelOverlay) {
+      this.resizeOverlayContainer(this.infoPanelOverlay, infoPanelBounds);
+      this.infoPanelDismissArea?.setSize(cw, ch);
+    }
+    if (this.summaryOverlay) {
+      this.resizeOverlayContainer(this.summaryOverlay, overlayBounds);
+    }
+    if (this.bustOverlay) {
+      this.resizeOverlayContainer(this.bustOverlay, overlayBounds);
+    }
+    if (this.winOverlay) {
+      const baseW = Number(this.winOverlay.getData('baseW')) || LAYOUT.CANVAS.REF_WIDTH;
+      const baseH = Number(this.winOverlay.getData('baseH')) || LAYOUT.CANVAS.REF_HEIGHT;
+      this.winOverlay.setScale(cw / baseW, ch / baseH);
+      const isRaised = this.winOverlay.getData('raised') === true;
+      this.winOverlay.setPosition(0, isRaised ? 0 : ch);
+    }
+    if (this.abilityOverlay) {
+      const baseW = Number(this.abilityOverlay.getData('baseW'));
+      const baseH = Number(this.abilityOverlay.getData('baseH'));
+      if (baseW > 0 && baseH > 0) {
+        this.abilityOverlay.setScale(cw / baseW, ch / baseH);
+      }
+    }
+  }
+
+  private handleResize(gameSize: Phaser.Structs.Size): void {
+    const cw = Math.round(gameSize.width);
+    const ch = Math.round(gameSize.height);
+
+    if (this.isAnimating) {
+      this.pendingResize = { cw, ch };
+      return;
+    }
+
+    this.applyLayout(cw, ch);
+  }
+
+  private flushPendingResize(): void {
+    if (!this.pendingResize) {
+      return;
+    }
+
+    const { cw, ch } = this.pendingResize;
+    this.pendingResize = null;
+    this.applyLayout(cw, ch);
+  }
+
+  private shutdown(): void {
+    this.scale.off('resize', this.handleResize, this);
+    this.pendingResize = null;
   }
 
   // === Draw handler ===
@@ -557,11 +815,14 @@ export class BarnScene extends Phaser.Scene {
       } else {
         if (!this.hasDoneFirstDraw) {
           this.hasDoneFirstDraw = true;
-          this.createActionButtons(true);
+          const { cw, ch } = this.getCanvasSize();
+          this.createActionButtons(true, cw, ch);
         } else {
           this.enableButtons();
         }
       }
+
+      this.flushPendingResize();
     });
   }
 
@@ -573,7 +834,8 @@ export class BarnScene extends Phaser.Scene {
     animated: boolean,
   ): Phaser.GameObjects.Container {
     const state = gameStore.getState();
-    const slotRects = getDynamicSlotRects(state.capacity);
+    const { cw, ch } = this.getCanvasSize();
+    const slotRects = getDynamicSlotRects(state.capacity, cw, ch);
     const slot = slotRects[slotIndex];
     if (!slot) return this.add.container(0, 0);
 
@@ -595,15 +857,16 @@ export class BarnScene extends Phaser.Scene {
 
     // NOISY! stripe overlay at top of card
     if (animalDef.noisy) {
+      const stripeHeight = Math.max(14, Math.round((20 / 104) * slot.h));
       const stripe = this.add
         .image(0, 0, TEXTURES.BADGE_NOISY_STRIPE)
         .setOrigin(0)
-        .setDisplaySize(slot.w, 20);
+        .setDisplaySize(slot.w, stripeHeight);
       container.add(stripe);
       const noisyLabel = this.add
-        .text(slot.w / 2, 10, 'NOISY!', {
+        .text(slot.w / 2, stripeHeight / 2, 'NOISY!', {
           fontFamily: 'monospace',
-          fontSize: '10px',
+          fontSize: this.fontPx(10, ch),
           fontStyle: 'bold',
           color: '#ffffff',
         })
@@ -624,21 +887,28 @@ export class BarnScene extends Phaser.Scene {
     const nameText = this.add
       .text(slot.w / 2, nameY, animalDef.name, {
         ...TEXT_STYLE_DARK,
-        fontSize: '11px',
+        fontSize: this.fontPx(11, ch),
         fontStyle: 'bold',
+        wordWrap: { width: slot.w - 8 },
       })
       .setOrigin(0.5);
     container.add(nameText);
 
     // Resource badges (32px, gold for Mischief top-left, green for Hay top-right)
-    const badgeY = animalDef.noisy ? 22 : 4;
+    const badgeY = animalDef.noisy
+      ? Math.round((22 / 104) * slot.h)
+      : Math.round((4 / 104) * slot.h);
+    const badgeSize = Math.max(24, Math.round((LAYOUT.BADGE.DIAMETER / 96) * slot.w));
     if (animalDef.mischief !== 0) {
-      const badge = this.add.image(4, badgeY, TEXTURES.BADGE_MISCHIEF_LG).setOrigin(0);
+      const badge = this.add
+        .image(Math.round((4 / 96) * slot.w), badgeY, TEXTURES.BADGE_MISCHIEF_LG)
+        .setOrigin(0)
+        .setDisplaySize(badgeSize, badgeSize);
       container.add(badge);
       const val = this.add
-        .text(20, badgeY + 9, `${animalDef.mischief}`, {
+        .text(Math.round((20 / 96) * slot.w), badgeY + badgeSize / 2, `${animalDef.mischief}`, {
           ...TEXT_STYLE_DARK,
-          fontSize: '14px',
+          fontSize: this.fontPx(14, ch),
           fontStyle: 'bold',
         })
         .setOrigin(0.5);
@@ -646,12 +916,15 @@ export class BarnScene extends Phaser.Scene {
     }
 
     if (animalDef.hay !== 0) {
-      const badge = this.add.image(slot.w - 36, badgeY, TEXTURES.BADGE_HAY_LG).setOrigin(0);
+      const badge = this.add
+        .image(slot.w - badgeSize - Math.round((4 / 96) * slot.w), badgeY, TEXTURES.BADGE_HAY_LG)
+        .setOrigin(0)
+        .setDisplaySize(badgeSize, badgeSize);
       container.add(badge);
       const val = this.add
-        .text(slot.w - 20, badgeY + 9, `${animalDef.hay}`, {
+        .text(slot.w - Math.round((20 / 96) * slot.w), badgeY + badgeSize / 2, `${animalDef.hay}`, {
           ...TEXT_STYLE_DARK,
-          fontSize: '14px',
+          fontSize: this.fontPx(14, ch),
           fontStyle: 'bold',
         })
         .setOrigin(0.5);
@@ -670,13 +943,14 @@ export class BarnScene extends Phaser.Scene {
         chipTexture = TEXTURES.ABILITY_STRIP_TRIGGERED;
         chipTextColor = PALETTE.TEXT_DARK;
       }
-      const chipY = slot.h - 24;
-      const chip = this.add.image(0, chipY, chipTexture).setOrigin(0).setDisplaySize(slot.w, 14);
+      const chipY = slot.h - Math.round((24 / 104) * slot.h);
+      const chipH = Math.max(12, Math.round((14 / 104) * slot.h));
+      const chip = this.add.image(0, chipY, chipTexture).setOrigin(0).setDisplaySize(slot.w, chipH);
       container.add(chip);
       const chipLabel = this.add
-        .text(slot.w / 2, chipY + 7, ability.label.toUpperCase(), {
+        .text(slot.w / 2, chipY + chipH / 2, ability.label.toUpperCase(), {
           fontFamily: 'monospace',
-          fontSize: '9px',
+          fontSize: this.fontPx(9, ch),
           fontStyle: 'bold',
           color: chipTextColor,
         })
@@ -686,7 +960,15 @@ export class BarnScene extends Phaser.Scene {
 
     // Legendary shimmer border
     if (animalDef.tier === 'legendary') {
-      const star = this.add.image(slot.w - 14, 6, TEXTURES.BADGE_STAR).setOrigin(0.5, 0);
+      const starSize = Math.max(12, Math.round((16 / 96) * slot.w));
+      const star = this.add
+        .image(
+          slot.w - Math.round((14 / 96) * slot.w),
+          Math.round((6 / 104) * slot.h),
+          TEXTURES.BADGE_STAR,
+        )
+        .setOrigin(0.5, 0)
+        .setDisplaySize(starSize, starSize);
       container.add(star);
 
       // Animated gold border glow
@@ -707,9 +989,9 @@ export class BarnScene extends Phaser.Scene {
     // Manual ability indicator (tap indicator for unused manual abilities)
     if (ability.trigger === 'manual' && !card.abilityUsed && !this.isAnimating) {
       const tapIndicator = this.add
-        .text(slot.w / 2, slot.h - 38, 'TAP', {
+        .text(slot.w / 2, slot.h - Math.round((38 / 104) * slot.h), 'TAP', {
           fontFamily: 'monospace',
-          fontSize: '8px',
+          fontSize: this.fontPx(8, ch),
           fontStyle: 'bold',
           color: '#ffd700',
         })
@@ -757,6 +1039,8 @@ export class BarnScene extends Phaser.Scene {
       container.setAlpha(0);
     }
 
+    container.setData('slotW', slot.w);
+    container.setData('slotH', slot.h);
     this.cardContainers.push(container);
     return container;
   }
@@ -789,30 +1073,38 @@ export class BarnScene extends Phaser.Scene {
   private showInfoPanel(card: CardInstance): void {
     if (this.infoPanelOverlay) return;
 
-    const bounds = getInfoPanelBounds();
+    const { cw, ch } = this.getCanvasSize();
+    const bounds = getInfoPanelBounds(cw, ch);
     const animalDef = getAnimalDef(card.animalId);
     const ability = ABILITY_REGISTRY[animalDef.abilityKind];
+    const sx = bounds.w / LAYOUT.INFO_PANEL.WIDTH;
+    const sy = bounds.h / LAYOUT.INFO_PANEL.HEIGHT;
 
     this.hideActionBar();
 
-    const overlay = this.add.container(bounds.x, LAYOUT.CANVAS.HEIGHT);
+    const overlay = this.add.container(bounds.x, ch);
+    overlay.setData('baseW', bounds.w);
+    overlay.setData('baseH', bounds.h);
 
     // Background
-    const bg = this.add.image(0, 0, TEXTURES.INFO_PANEL_BG).setOrigin(0);
+    const bg = this.add
+      .image(0, 0, TEXTURES.INFO_PANEL_BG)
+      .setOrigin(0)
+      .setDisplaySize(bounds.w, bounds.h);
     overlay.add(bg);
 
     // Portrait frame
     const portrait = this.add
-      .sprite(24 + 36, 18 + 36, 'animals', card.animalId)
+      .sprite((24 + 36) * sx, (18 + 36) * sy, 'animals', card.animalId)
       .setOrigin(0.5)
-      .setScale(3);
+      .setScale(3 * Math.min(sx, sy));
     overlay.add(portrait);
 
     // Name
     const name = this.add
-      .text(110, 20, animalDef.name, {
+      .text(110 * sx, 20 * sy, animalDef.name, {
         ...TEXT_STYLE_LIGHT,
-        fontSize: '16px',
+        fontSize: this.fontPx(16, ch),
         fontStyle: 'bold',
       })
       .setOrigin(0, 0);
@@ -821,9 +1113,9 @@ export class BarnScene extends Phaser.Scene {
     // Tier badge
     if (animalDef.tier === 'legendary') {
       const tierBadge = this.add
-        .text(110, 40, 'LEGENDARY', {
+        .text(110 * sx, 40 * sy, 'LEGENDARY', {
           fontFamily: 'monospace',
-          fontSize: '10px',
+          fontSize: this.fontPx(10, ch),
           fontStyle: 'bold',
           color: '#ffd700',
         })
@@ -832,24 +1124,31 @@ export class BarnScene extends Phaser.Scene {
     }
 
     // Resource badges
-    const badgeY = 54;
-    const mBadge = this.add.image(110, badgeY, TEXTURES.BADGE_MISCHIEF).setOrigin(0, 0);
+    const badgeY = 54 * sy;
+    const badgeSize = 24 * Math.min(sx, sy);
+    const mBadge = this.add
+      .image(110 * sx, badgeY, TEXTURES.BADGE_MISCHIEF)
+      .setOrigin(0, 0)
+      .setDisplaySize(badgeSize, badgeSize);
     overlay.add(mBadge);
     const mText = this.add
-      .text(136, badgeY + 4, `${animalDef.mischief}`, {
+      .text(136 * sx, badgeY + 4 * sy, `${animalDef.mischief}`, {
         ...TEXT_STYLE_LIGHT,
-        fontSize: '14px',
+        fontSize: this.fontPx(14, ch),
         fontStyle: 'bold',
       })
       .setOrigin(0, 0);
     overlay.add(mText);
 
-    const hBadge = this.add.image(176, badgeY, TEXTURES.BADGE_HAY).setOrigin(0, 0);
+    const hBadge = this.add
+      .image(176 * sx, badgeY, TEXTURES.BADGE_HAY)
+      .setOrigin(0, 0)
+      .setDisplaySize(badgeSize, badgeSize);
     overlay.add(hBadge);
     const hText = this.add
-      .text(202, badgeY + 4, `${animalDef.hay}`, {
+      .text(202 * sx, badgeY + 4 * sy, `${animalDef.hay}`, {
         ...TEXT_STYLE_LIGHT,
-        fontSize: '14px',
+        fontSize: this.fontPx(14, ch),
         fontStyle: 'bold',
       })
       .setOrigin(0, 0);
@@ -861,19 +1160,20 @@ export class BarnScene extends Phaser.Scene {
     if (ability.kind !== 'none') traits.push(ability.label.toUpperCase());
     if (animalDef.tier === 'legendary') traits.push('LEGENDARY');
     const traitText = this.add
-      .text(110, 88, traits.join(' | '), {
+      .text(110 * sx, 88 * sy, traits.join(' | '), {
         ...TEXT_STYLE_LIGHT,
-        fontSize: '11px',
+        fontSize: this.fontPx(11, ch),
+        wordWrap: { width: Math.max(90, bounds.w - 120 * sx) },
       })
       .setOrigin(0, 0);
     overlay.add(traitText);
 
     // Ability text
     const abilityText = this.add
-      .text(24, 112, ability.description, {
+      .text(24 * sx, 112 * sy, ability.description, {
         ...TEXT_STYLE_LIGHT,
-        fontSize: '12px',
-        wordWrap: { width: 330 },
+        fontSize: this.fontPx(12, ch),
+        wordWrap: { width: Math.max(120, bounds.w - 36) },
       })
       .setOrigin(0, 0);
     overlay.add(abilityText);
@@ -889,7 +1189,7 @@ export class BarnScene extends Phaser.Scene {
 
     // Full-screen invisible hit area for dismiss
     const dismissArea = this.add
-      .rectangle(0, 0, LAYOUT.CANVAS.WIDTH, LAYOUT.CANVAS.HEIGHT)
+      .rectangle(0, 0, cw, ch)
       .setOrigin(0)
       .setAlpha(0.001)
       .setInteractive()
@@ -900,15 +1200,17 @@ export class BarnScene extends Phaser.Scene {
     });
 
     this.infoPanelOverlay = overlay;
+    this.infoPanelDismissArea = dismissArea;
   }
 
   private dismissInfoPanel(
     overlay: Phaser.GameObjects.Container,
     dismissArea: Phaser.GameObjects.Rectangle,
   ): void {
+    const { ch } = this.getCanvasSize();
     this.tweens.add({
       targets: overlay,
-      y: LAYOUT.CANVAS.HEIGHT,
+      y: ch,
       alpha: 0,
       duration: ANIMATION.INFO_PANEL_DISMISS_MS,
       ease: 'Cubic.easeIn',
@@ -916,6 +1218,7 @@ export class BarnScene extends Phaser.Scene {
         overlay.destroy();
         dismissArea.destroy();
         this.infoPanelOverlay = null;
+        this.infoPanelDismissArea = null;
         this.showActionBar();
       },
     });
@@ -927,16 +1230,25 @@ export class BarnScene extends Phaser.Scene {
     const night = session.currentNight;
     if (!night?.pendingDecision || night.pendingDecision.kind !== 'peek') return;
 
+    const { cw, ch } = this.getCanvasSize();
     this.hideActionBar();
     const decision = night.pendingDecision;
     const previewCard = decision.previewCard;
     const animalDef = getAnimalDef(previewCard.animalId);
+    const slotRect = getDynamicSlotRects(session.capacity, cw, ch)[0];
+    const previewW = slotRect?.w ?? 96;
+    const previewH = slotRect?.h ?? 104;
 
     const overlay = this.add.container(0, 0);
 
     // Preview card centered above action bar
-    const cx = LAYOUT.CANVAS.WIDTH / 2;
-    const cy = 600;
+    const cx = cw / 2;
+    const buttonLayout = getActionBarPosition(session.capacity, true, cw, ch);
+    const secondaryButtonRect = buttonLayout.secondary ?? buttonLayout.primary;
+    const cy = Math.max(
+      Math.round(ch * 0.42),
+      buttonLayout.primary.y - previewH - Math.round(ch * 0.06),
+    );
 
     let cardBgTexture: string;
     if (animalDef.tier === 'legendary') {
@@ -948,69 +1260,75 @@ export class BarnScene extends Phaser.Scene {
     }
 
     const cardBg = this.add
-      .image(cx - 48, cy - 52, cardBgTexture)
+      .image(cx - previewW / 2, cy - previewH / 2, cardBgTexture)
       .setOrigin(0)
-      .setDisplaySize(96, 104);
+      .setDisplaySize(previewW, previewH);
     overlay.add(cardBg);
 
     const sprite = this.add
       .sprite(cx, cy, 'animals', previewCard.animalId)
       .setOrigin(0.5)
-      .setScale(2.5);
+      .setScale(Math.max(1.8, previewH / 40));
     overlay.add(sprite);
 
     const nameText = this.add
-      .text(cx, cy + 42, animalDef.name, {
+      .text(cx, cy + previewH / 2 - 10, animalDef.name, {
         ...TEXT_STYLE_LIGHT,
-        fontSize: '14px',
+        fontSize: this.fontPx(14, ch),
         fontStyle: 'bold',
       })
       .setOrigin(0.5);
     overlay.add(nameText);
 
     const infoText = this.add
-      .text(cx, cy + 60, `M:${animalDef.mischief} H:${animalDef.hay}`, {
+      .text(cx, cy + previewH / 2 + 8, `M:${animalDef.mischief} H:${animalDef.hay}`, {
         ...TEXT_STYLE_LIGHT,
-        fontSize: '12px',
+        fontSize: this.fontPx(12, ch),
       })
       .setOrigin(0.5);
     overlay.add(infoText);
 
     // Accept button (green)
-    const btnY = LAYOUT.ACTION_BAR.Y;
-    const btnW = 160;
-    const btnH = 48;
-
     const acceptBtn = this.add
-      .image(cx - btnW - 8, btnY, TEXTURES.BUTTON_PRIMARY)
+      .image(buttonLayout.primary.x, buttonLayout.primary.y, TEXTURES.BUTTON_PRIMARY)
       .setOrigin(0)
-      .setDisplaySize(btnW, btnH)
+      .setDisplaySize(buttonLayout.primary.w, buttonLayout.primary.h)
       .setInteractive();
     overlay.add(acceptBtn);
 
     const acceptLabel = this.add
-      .text(cx - btnW / 2 - 8, btnY + btnH / 2, 'ACCEPT', {
-        ...TEXT_STYLE_LIGHT,
-        fontSize: '16px',
-        fontStyle: 'bold',
-      })
+      .text(
+        buttonLayout.primary.x + buttonLayout.primary.w / 2,
+        buttonLayout.primary.y + buttonLayout.primary.h / 2,
+        'ACCEPT',
+        {
+          ...TEXT_STYLE_LIGHT,
+          fontSize: this.fontPx(16, ch),
+          fontStyle: 'bold',
+        },
+      )
       .setOrigin(0.5);
     overlay.add(acceptLabel);
 
     // Reject button (red)
     const rejectBtn = this.add
-      .image(cx + 8, btnY, TEXTURES.BUTTON_DANGER)
+      .image(secondaryButtonRect.x, secondaryButtonRect.y, TEXTURES.BUTTON_DANGER)
       .setOrigin(0)
-      .setDisplaySize(btnW, btnH)
+      .setDisplaySize(secondaryButtonRect.w, secondaryButtonRect.h)
       .setInteractive();
     overlay.add(rejectBtn);
 
     const rejectLabel = this.add
-      .text(cx + btnW / 2 + 8, btnY + btnH / 2, 'REJECT', {
-        ...TEXT_STYLE_LIGHT,
-        fontSize: '16px',
-        fontStyle: 'bold',
-      })
+      .text(
+        secondaryButtonRect.x + secondaryButtonRect.w / 2,
+        secondaryButtonRect.y + secondaryButtonRect.h / 2,
+        'REJECT',
+        {
+          ...TEXT_STYLE_LIGHT,
+          fontSize: this.fontPx(16, ch),
+          fontStyle: 'bold',
+        },
+      )
       .setOrigin(0.5);
     overlay.add(rejectLabel);
 
@@ -1039,6 +1357,8 @@ export class BarnScene extends Phaser.Scene {
       this.enableButtons();
     });
 
+    overlay.setData('baseW', cw);
+    overlay.setData('baseH', ch);
     this.abilityOverlay = overlay;
   }
 
@@ -1048,24 +1368,29 @@ export class BarnScene extends Phaser.Scene {
     const night = session.currentNight;
     if (!night?.pendingDecision || night.pendingDecision.kind !== 'boot') return;
 
+    const { cw, ch } = this.getCanvasSize();
     this.hideActionBar();
     const decision = night.pendingDecision;
     const validTargetIds = new Set(decision.validTargetCardIds);
 
     const overlay = this.add.container(0, 0);
 
+    const actionBar = getActionBarPosition(session.capacity, false, cw, ch).primary;
+    const instructionY =
+      actionBar.y - Math.max(42, Math.round((46 / LAYOUT.CANVAS.REF_HEIGHT) * ch));
+
     // Instructional text
     const instrText = this.add
-      .text(LAYOUT.CANVAS.WIDTH / 2, 520, 'Tap an animal to remove', {
+      .text(cw / 2, instructionY, 'Tap an animal to remove', {
         ...TEXT_STYLE_LIGHT,
-        fontSize: '14px',
+        fontSize: this.fontPx(14, ch),
         fontStyle: 'bold',
       })
       .setOrigin(0.5);
     overlay.add(instrText);
 
     // Highlight valid targets
-    const slotRects = getDynamicSlotRects(session.capacity);
+    const slotRects = getDynamicSlotRects(session.capacity, cw, ch);
     for (let i = 0; i < night.barn.length; i++) {
       const card = night.barn[i];
       const slot = slotRects[i];
@@ -1100,17 +1425,20 @@ export class BarnScene extends Phaser.Scene {
     }
 
     // Cancel/forfeit button
+    const cancelW = Math.max(140, Math.round(cw * 0.4));
+    const cancelH = 48;
+    const cancelX = (cw - cancelW) / 2;
     const cancelBtn = this.add
-      .image(LAYOUT.CANVAS.WIDTH / 2 - 80, LAYOUT.ACTION_BAR.Y, TEXTURES.BUTTON_SECONDARY)
+      .image(cancelX, actionBar.y, TEXTURES.BUTTON_SECONDARY)
       .setOrigin(0)
-      .setDisplaySize(160, 48)
+      .setDisplaySize(cancelW, cancelH)
       .setInteractive();
     overlay.add(cancelBtn);
 
     const cancelLabel = this.add
-      .text(LAYOUT.CANVAS.WIDTH / 2, LAYOUT.ACTION_BAR.Y + 24, 'CANCEL', {
+      .text(cw / 2, actionBar.y + cancelH / 2, 'CANCEL', {
         ...TEXT_STYLE_LIGHT,
-        fontSize: '16px',
+        fontSize: this.fontPx(16, ch),
         fontStyle: 'bold',
       })
       .setOrigin(0.5);
@@ -1121,6 +1449,8 @@ export class BarnScene extends Phaser.Scene {
       this.executeBootTarget(decision.sourceCardId, overlay);
     });
 
+    overlay.setData('baseW', cw);
+    overlay.setData('baseH', ch);
     this.abilityOverlay = overlay;
   }
 
@@ -1145,44 +1475,44 @@ export class BarnScene extends Phaser.Scene {
     const night = session.currentNight;
     if (!night?.pendingDecision || night.pendingDecision.kind !== 'fetch') return;
 
+    const { cw, ch } = this.getCanvasSize();
     this.hideActionBar();
     const decision = night.pendingDecision;
 
     const overlay = this.add.container(0, 0);
 
     // Semi-transparent background
-    const bg = this.add
-      .rectangle(0, 0, LAYOUT.CANVAS.WIDTH, LAYOUT.CANVAS.HEIGHT, 0x000000, 0.6)
-      .setOrigin(0)
-      .setInteractive();
+    const bg = this.add.rectangle(0, 0, cw, ch, 0x000000, 0.6).setOrigin(0).setInteractive();
     overlay.add(bg);
 
     // Title
+    const titleY = Math.round(ch * 0.46);
+    const listWidth = Math.min(360, cw - 60);
+    const itemHeight = Math.max(44, Math.round((44 / LAYOUT.CANVAS.REF_HEIGHT) * ch));
+    const startY = titleY + Math.max(26, Math.round((32 / LAYOUT.CANVAS.REF_HEIGHT) * ch));
     const titleText = this.add
-      .text(LAYOUT.CANVAS.WIDTH / 2, 400, 'Choose an animal to fetch', {
+      .text(cw / 2, titleY, 'Choose an animal to fetch', {
         ...TEXT_STYLE_LIGHT,
-        fontSize: '16px',
+        fontSize: this.fontPx(16, ch),
         fontStyle: 'bold',
       })
       .setOrigin(0.5);
     overlay.add(titleText);
 
     // Candidate list
-    const startY = 440;
-    const itemHeight = 44;
     decision.validAnimalIds.forEach((animalId: AnimalId, index: number) => {
       const def = getAnimalDef(animalId);
       const y = startY + index * itemHeight;
 
       const itemBg = this.add
-        .rectangle(LAYOUT.CANVAS.WIDTH / 2, y + itemHeight / 2, 300, 40, 0x333333, 0.8)
+        .rectangle(cw / 2, y + itemHeight / 2, listWidth, itemHeight - 4, 0x333333, 0.8)
         .setInteractive();
       overlay.add(itemBg);
 
       const itemText = this.add
-        .text(LAYOUT.CANVAS.WIDTH / 2, y + itemHeight / 2, def.name, {
+        .text(cw / 2, y + itemHeight / 2, def.name, {
           ...TEXT_STYLE_LIGHT,
-          fontSize: '14px',
+          fontSize: this.fontPx(14, ch),
           fontStyle: 'bold',
         })
         .setOrigin(0.5);
@@ -1194,16 +1524,20 @@ export class BarnScene extends Phaser.Scene {
     });
 
     // Cancel button
-    const cancelY = startY + decision.validAnimalIds.length * itemHeight + 16;
+    const cancelY =
+      startY +
+      decision.validAnimalIds.length * itemHeight +
+      Math.max(12, Math.round((16 / LAYOUT.CANVAS.REF_HEIGHT) * ch));
+    const cancelW = Math.max(160, Math.round(cw * 0.42));
     const cancelBtn = this.add
-      .rectangle(LAYOUT.CANVAS.WIDTH / 2, cancelY + 24, 160, 40, 0x555555, 0.9)
+      .rectangle(cw / 2, cancelY + 24, cancelW, 40, 0x555555, 0.9)
       .setInteractive();
     overlay.add(cancelBtn);
 
     const cancelLabel = this.add
-      .text(LAYOUT.CANVAS.WIDTH / 2, cancelY + 24, 'CANCEL', {
+      .text(cw / 2, cancelY + 24, 'CANCEL', {
         ...TEXT_STYLE_LIGHT,
-        fontSize: '14px',
+        fontSize: this.fontPx(14, ch),
         fontStyle: 'bold',
       })
       .setOrigin(0.5);
@@ -1232,6 +1566,8 @@ export class BarnScene extends Phaser.Scene {
       this.enableButtons();
     });
 
+    overlay.setData('baseW', cw);
+    overlay.setData('baseH', ch);
     this.abilityOverlay = overlay;
   }
 
@@ -1326,14 +1662,15 @@ export class BarnScene extends Phaser.Scene {
   private animateCardReveal(card: CardInstance, slotIndex: number): Promise<void> {
     return new Promise<void>((resolve) => {
       const state = gameStore.getState();
-      const slotRects = getDynamicSlotRects(state.capacity);
+      const { cw, ch } = this.getCanvasSize();
+      const slotRects = getDynamicSlotRects(state.capacity, cw, ch);
       const slot = slotRects[slotIndex];
       if (!slot) {
         resolve();
         return;
       }
 
-      const deckPos = getDeckStackPosition(state.capacity);
+      const deckPos = getDeckStackPosition(state.capacity, cw, ch);
 
       const container = this.renderCardInSlot(card, slotIndex, true);
       container.setPosition(deckPos.x, deckPos.y);
@@ -1463,8 +1800,11 @@ export class BarnScene extends Phaser.Scene {
     if (this.bustOverlay) return;
 
     const state = gameStore.getState();
-    const bounds = getOverlayBounds(state.capacity);
+    const { cw, ch } = this.getCanvasSize();
+    const bounds = getOverlayBounds(state.capacity, cw, ch);
     const overlay = this.add.container(bounds.x, bounds.y);
+    overlay.setData('baseW', bounds.w);
+    overlay.setData('baseH', bounds.h);
 
     const bg = this.add.rectangle(0, 0, bounds.w, bounds.h, 0x000000, 0.75).setOrigin(0);
     overlay.add(bg);
@@ -1472,7 +1812,7 @@ export class BarnScene extends Phaser.Scene {
     const bustText = this.add
       .text(bounds.w / 2, bounds.h / 2 - 40, message, {
         fontFamily: 'monospace',
-        fontSize: '28px',
+        fontSize: this.fontPx(28, ch),
         fontStyle: 'bold',
         color: '#d94b3d',
         align: 'center',
@@ -1480,7 +1820,7 @@ export class BarnScene extends Phaser.Scene {
       .setOrigin(0.5);
     overlay.add(bustText);
 
-    const btnW = 200;
+    const btnW = Math.min(260, Math.round(bounds.w * 0.58));
     const btnH = 48;
     const btnX = (bounds.w - btnW) / 2;
     const btnY = bounds.h / 2 + 30;
@@ -1495,7 +1835,7 @@ export class BarnScene extends Phaser.Scene {
     const continueText = this.add
       .text(btnX + btnW / 2, btnY + btnH / 2, 'Continue', {
         ...TEXT_STYLE_LIGHT,
-        fontSize: '18px',
+        fontSize: this.fontPx(18, ch),
         fontStyle: 'bold',
       })
       .setOrigin(0.5);
@@ -1530,6 +1870,8 @@ export class BarnScene extends Phaser.Scene {
   private showWinOverlay(session: GameSession): void {
     if (this.winOverlay) return;
 
+    const { cw, ch } = this.getCanvasSize();
+
     // Camera zoom burst
     this.cameras.main.zoomTo(
       1.04,
@@ -1543,18 +1885,19 @@ export class BarnScene extends Phaser.Scene {
       },
     );
 
-    const overlay = this.add.container(0, LAYOUT.CANVAS.HEIGHT);
+    const overlay = this.add.container(0, ch);
+    overlay.setData('baseW', cw);
+    overlay.setData('baseH', ch);
+    overlay.setData('raised', false);
 
-    const bg = this.add
-      .rectangle(0, 0, LAYOUT.CANVAS.WIDTH, LAYOUT.CANVAS.HEIGHT, 0x000000, 0.85)
-      .setOrigin(0);
+    const bg = this.add.rectangle(0, 0, cw, ch, 0x000000, 0.85).setOrigin(0);
     overlay.add(bg);
 
     // YOU WIN! text
     const winText = this.add
-      .text(LAYOUT.CANVAS.WIDTH / 2, 200, 'YOU WIN!', {
+      .text(cw / 2, Math.round((200 / LAYOUT.CANVAS.REF_HEIGHT) * ch), 'YOU WIN!', {
         fontFamily: 'monospace',
-        fontSize: '32px',
+        fontSize: this.fontPx(32, ch),
         fontStyle: 'bold',
         color: '#ffd700',
       })
@@ -1567,17 +1910,26 @@ export class BarnScene extends Phaser.Scene {
       const legendaryCards = night.barn.filter(
         (c) => getAnimalDef(c.animalId).tier === 'legendary',
       );
-      const startX = LAYOUT.CANVAS.WIDTH / 2 - (legendaryCards.length - 1) * 60;
+      const spacing = Math.round((120 / LAYOUT.CANVAS.REF_WIDTH) * cw);
+      const startX = cw / 2 - ((legendaryCards.length - 1) * spacing) / 2;
       legendaryCards.forEach((card, i) => {
-        const x = startX + i * 120;
-        const sprite = this.add.sprite(x, 340, 'animals', card.animalId).setOrigin(0.5).setScale(3);
+        const x = startX + i * spacing;
+        const sprite = this.add
+          .sprite(x, Math.round((340 / LAYOUT.CANVAS.REF_HEIGHT) * ch), 'animals', card.animalId)
+          .setOrigin(0.5)
+          .setScale(Math.max(2.2, (3 * ch) / LAYOUT.CANVAS.REF_HEIGHT));
         overlay.add(sprite);
         const name = this.add
-          .text(x, 390, getAnimalDef(card.animalId).name, {
-            ...TEXT_STYLE_LIGHT,
-            fontSize: '11px',
-            fontStyle: 'bold',
-          })
+          .text(
+            x,
+            Math.round((390 / LAYOUT.CANVAS.REF_HEIGHT) * ch),
+            getAnimalDef(card.animalId).name,
+            {
+              ...TEXT_STYLE_LIGHT,
+              fontSize: this.fontPx(11, ch),
+              fontStyle: 'bold',
+            },
+          )
           .setOrigin(0.5);
         overlay.add(name);
       });
@@ -1586,12 +1938,12 @@ export class BarnScene extends Phaser.Scene {
     // Final score
     const scoreText = this.add
       .text(
-        LAYOUT.CANVAS.WIDTH / 2,
-        460,
+        cw / 2,
+        Math.round((460 / LAYOUT.CANVAS.REF_HEIGHT) * ch),
         `Final Mischief: ${session.mischief}\nTotal Hay: ${session.hay}\nNights: ${session.nightNumber - 1}`,
         {
           ...TEXT_STYLE_LIGHT,
-          fontSize: '14px',
+          fontSize: this.fontPx(14, ch),
           align: 'center',
         },
       )
@@ -1599,10 +1951,11 @@ export class BarnScene extends Phaser.Scene {
     overlay.add(scoreText);
 
     // Play Again button
-    const btnW = 200;
+    const actionBar = getActionBarPosition(session.capacity, false, cw, ch).primary;
+    const btnW = Math.min(280, Math.round(cw * 0.52));
     const btnH = 56;
-    const btnX = (LAYOUT.CANVAS.WIDTH - btnW) / 2;
-    const btnY = 560;
+    const btnX = (cw - btnW) / 2;
+    const btnY = actionBar.y;
 
     const playAgainBtn = this.add
       .image(btnX, btnY, TEXTURES.BUTTON_PRIMARY)
@@ -1614,7 +1967,7 @@ export class BarnScene extends Phaser.Scene {
     const playAgainText = this.add
       .text(btnX + btnW / 2, btnY + btnH / 2, 'Play Again', {
         ...TEXT_STYLE_LIGHT,
-        fontSize: '18px',
+        fontSize: this.fontPx(18, ch),
         fontStyle: 'bold',
       })
       .setOrigin(0.5);
@@ -1631,6 +1984,9 @@ export class BarnScene extends Phaser.Scene {
       y: 0,
       duration: ANIMATION.WIN_OVERLAY_RISE_MS,
       ease: 'Back.easeOut',
+      onComplete: () => {
+        overlay.setData('raised', true);
+      },
     });
 
     this.winOverlay = overlay;
@@ -1641,8 +1997,11 @@ export class BarnScene extends Phaser.Scene {
   private showNightSummaryOverlay(summary: NightScoreSummary, session: GameSession): void {
     if (this.summaryOverlay) return;
 
-    const bounds = getOverlayBounds(session.capacity);
+    const { cw, ch } = this.getCanvasSize();
+    const bounds = getOverlayBounds(session.capacity, cw, ch);
     const overlay = this.add.container(bounds.x, bounds.y);
+    overlay.setData('baseW', bounds.w);
+    overlay.setData('baseH', bounds.h);
 
     const bg = this.add.rectangle(0, 0, bounds.w, bounds.h, 0x000000, 0.85).setOrigin(0);
     overlay.add(bg);
@@ -1651,13 +2010,13 @@ export class BarnScene extends Phaser.Scene {
     const title = this.add
       .text(bounds.w / 2, 20, titleStr, {
         ...TEXT_STYLE_LIGHT,
-        fontSize: '20px',
+        fontSize: this.fontPx(20, ch),
         fontStyle: 'bold',
       })
       .setOrigin(0.5, 0);
     overlay.add(title);
 
-    let lineY = 60;
+    const lineY = 60;
     const lineHeight = 24;
 
     summary.lines.forEach((line: NightScoreLine, index: number) => {
@@ -1666,7 +2025,7 @@ export class BarnScene extends Phaser.Scene {
       const lineText = this.add
         .text(20, y, `${line.name}  M:${mStr}  H:${line.hay}`, {
           ...TEXT_STYLE_LIGHT,
-          fontSize: '12px',
+          fontSize: this.fontPx(12, ch),
         })
         .setOrigin(0);
       overlay.add(lineText);
@@ -1685,7 +2044,7 @@ export class BarnScene extends Phaser.Scene {
     const baseLine = this.add
       .text(20, totalsY, `Base Mischief: ${summary.baseMischief}`, {
         ...TEXT_STYLE_LIGHT,
-        fontSize: '13px',
+        fontSize: this.fontPx(13, ch),
       })
       .setOrigin(0);
     overlay.add(baseLine);
@@ -1694,7 +2053,7 @@ export class BarnScene extends Phaser.Scene {
       const bonusLine = this.add
         .text(20, totalsY + 20, `Bonus Mischief: +${summary.bonusMischief}`, {
           ...TEXT_STYLE_LIGHT,
-          fontSize: '13px',
+          fontSize: this.fontPx(13, ch),
         })
         .setOrigin(0);
       overlay.add(bonusLine);
@@ -1704,7 +2063,7 @@ export class BarnScene extends Phaser.Scene {
       const penaltyLine = this.add
         .text(20, totalsY + 40, `Penalty: ${summary.penaltyMischief}`, {
           fontFamily: 'monospace',
-          fontSize: '13px',
+          fontSize: this.fontPx(13, ch),
           color: '#d94b3d',
         })
         .setOrigin(0);
@@ -1715,7 +2074,7 @@ export class BarnScene extends Phaser.Scene {
     const totalLine = this.add
       .text(20, totalMischiefY, `Total Mischief: ${summary.totalMischief}`, {
         ...TEXT_STYLE_LIGHT,
-        fontSize: '15px',
+        fontSize: this.fontPx(15, ch),
         fontStyle: 'bold',
       })
       .setOrigin(0);
@@ -1728,7 +2087,7 @@ export class BarnScene extends Phaser.Scene {
         `Hay Earned: ${summary.hayEarned}  Cost: ${summary.hayCost}  Net Hay: ${summary.totalHay}`,
         {
           ...TEXT_STYLE_LIGHT,
-          fontSize: '12px',
+          fontSize: this.fontPx(12, ch),
         },
       )
       .setOrigin(0);
@@ -1738,7 +2097,7 @@ export class BarnScene extends Phaser.Scene {
       const unpaidLine = this.add
         .text(20, totalMischiefY + 44, `Hay unpaid: ${summary.hayUnpaid}`, {
           fontFamily: 'monospace',
-          fontSize: '12px',
+          fontSize: this.fontPx(12, ch),
           color: '#ffbe4d',
         })
         .setOrigin(0);
@@ -1761,7 +2120,7 @@ export class BarnScene extends Phaser.Scene {
           const pennedText = this.add
             .text(44, pennedY, `${pennedDef.name} penned up next night`, {
               fontFamily: 'monospace',
-              fontSize: '12px',
+              fontSize: this.fontPx(12, ch),
               color: '#ffbe4d',
             })
             .setOrigin(0);
@@ -1779,14 +2138,14 @@ export class BarnScene extends Phaser.Scene {
       const pennedText = this.add
         .text(44, pennedY, `${pennedDef.name} penned up next night`, {
           fontFamily: 'monospace',
-          fontSize: '12px',
+          fontSize: this.fontPx(12, ch),
           color: '#ffbe4d',
         })
         .setOrigin(0);
       overlay.add(pennedText);
     }
 
-    const btnW = 280;
+    const btnW = Math.min(320, bounds.w - 40);
     const btnH = 48;
     const btnX = (bounds.w - btnW) / 2;
     const btnY = bounds.h - 70;
@@ -1801,7 +2160,7 @@ export class BarnScene extends Phaser.Scene {
     const continueText = this.add
       .text(btnX + btnW / 2, btnY + btnH / 2, 'Continue to Trading Post', {
         ...TEXT_STYLE_LIGHT,
-        fontSize: '16px',
+        fontSize: this.fontPx(16, ch),
         fontStyle: 'bold',
       })
       .setOrigin(0.5);

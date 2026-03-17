@@ -32,6 +32,7 @@ export class BootScene extends Phaser.Scene {
   }
 
   create(): void {
+    // Textures are generated once at reference sizes; scenes scale them with setDisplaySize().
     // --- Card backgrounds ---
     maybeGenerateTexture(this, TEXTURES.CARD_PARCHMENT, CARD_W, CARD_H, (graphics) => {
       graphics.fillStyle(PALETTE.PARCHMENT, 1);

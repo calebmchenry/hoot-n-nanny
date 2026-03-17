@@ -1,7 +1,7 @@
 export const LAYOUT = {
   CANVAS: {
-    WIDTH: 390,
-    HEIGHT: 844,
+    REF_WIDTH: 390,
+    REF_HEIGHT: 844,
   },
   SLOT: {
     WIDTH: 96,

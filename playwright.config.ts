@@ -8,11 +8,47 @@ export default defineConfig({
   },
   projects: [
     {
-      name: 'mobile',
+      name: 'mobile-small',
       use: {
         viewport: {
           width: 375,
           height: 667,
+        },
+      },
+    },
+    {
+      name: 'mobile-large',
+      use: {
+        viewport: {
+          width: 393,
+          height: 852,
+        },
+      },
+    },
+    {
+      name: 'tablet',
+      use: {
+        viewport: {
+          width: 768,
+          height: 1024,
+        },
+      },
+    },
+    {
+      name: 'desktop',
+      use: {
+        viewport: {
+          width: 1920,
+          height: 1080,
+        },
+      },
+    },
+    {
+      name: 'phone-landscape',
+      use: {
+        viewport: {
+          width: 667,
+          height: 375,
         },
       },
     },
