@@ -1,5 +1,6 @@
 import { getAnimalDef } from './animals';
 import { drawCard } from './deck';
+import { resolveOnEnter, runEntryPipeline } from './abilityResolver';
 import {
   GamePhase,
   type BustType,
@@ -39,10 +40,13 @@ export const startNight = (options: {
   nightNumber: number;
   pennedUpCard?: CardInstance | null;
 }): NightState => {
+  // Reset abilityUsed on all cards at the start of each night
+  const deck = options.deck.map((card) => ({ ...card, abilityUsed: false }));
+
   return {
     phase: GamePhase.ReadyToDraw,
     nightNumber: options.nightNumber,
-    deck: [...options.deck],
+    deck,
     barn: [],
     capacity: options.capacity,
     noisyCount: 0,
@@ -53,6 +57,9 @@ export const startNight = (options: {
     bust: null,
     summary: null,
     pennedUpCard: options.pennedUpCard ?? null,
+    pendingDecision: null,
+    legendaryCount: 0,
+    wonThisNight: false,
   };
 };
 
@@ -88,63 +95,36 @@ export const drawAnimal = (
   }
 
   const events: NightEvent[] = [{ type: 'card_draw_started' }];
-  const nextBarn = [...state.barn, drawResult.card];
-  const nextNoisyCount = countUnmitigatedNoisy(nextBarn);
-  const nextWarning = nextNoisyCount >= 2;
 
-  events.push({
-    type: 'card_revealed',
-    card: drawResult.card,
-    slotIndex: nextBarn.length - 1,
-  });
+  // Run entry pipeline (steps 1-6)
+  const pipelineState = { ...state, deck: drawResult.deck };
+  const pipelineResult = runEntryPipeline(pipelineState, drawResult.card);
 
-  if (nextNoisyCount !== state.noisyCount || nextWarning !== state.warning) {
-    events.push({
-      type: 'warning_state_changed',
-      noisyCount: nextNoisyCount,
-      warning: nextWarning,
-    });
+  events.push(...pipelineResult.events);
+  let nextState = pipelineResult.state;
+
+  // If bust or win, stop here
+  if (nextState.complete) {
+    return { state: nextState, events };
   }
 
-  const bustType = checkBust(nextBarn, state.capacity, nextNoisyCount);
+  // Step 7: Resolve on_enter ability (ONLY for player-drawn cards)
+  const abilityResult = resolveOnEnter(nextState, drawResult.card);
+  events.push(...abilityResult.events);
+  nextState = abilityResult.state;
 
-  if (bustType) {
-    events.push({
-      type: 'bust_triggered',
-      bustType,
-      card: drawResult.card,
-    });
-
-    return {
-      state: {
-        ...state,
-        phase: GamePhase.Bust,
-        deck: drawResult.deck,
-        barn: nextBarn,
-        noisyCount: nextNoisyCount,
-        warning: nextWarning,
-        hasDrawn: true,
-        complete: true,
-        bust: {
-          type: bustType,
-          card: drawResult.card,
-        },
-      },
-      events,
-    };
+  // If ability set a pending decision, return and wait for player input
+  if (nextState.pendingDecision) {
+    return { state: nextState, events };
   }
 
-  const isDeckEmpty = drawResult.deck.length === 0;
+  // Normal flow: check if deck is empty, transition to appropriate phase
+  const isDeckEmpty = nextState.deck.length === 0;
 
   return {
     state: {
-      ...state,
-      phase: isDeckEmpty ? GamePhase.NightSummary : toDecisionPhase(nextWarning),
-      deck: drawResult.deck,
-      barn: nextBarn,
-      noisyCount: nextNoisyCount,
-      warning: nextWarning,
-      hasDrawn: true,
+      ...nextState,
+      phase: isDeckEmpty ? GamePhase.NightSummary : toDecisionPhase(nextState.warning),
       autoScored: isDeckEmpty,
       complete: isDeckEmpty,
     },

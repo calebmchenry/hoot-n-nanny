@@ -4,12 +4,12 @@ export const LAYOUT = {
     HEIGHT: 844,
   },
   SLOT: {
-    WIDTH: 88,
-    HEIGHT: 88,
-    GAP: 16,
+    WIDTH: 96,
+    HEIGHT: 104,
+    GAP: 12,
     COLUMNS: 3,
-    START_Y: 160,
-    ROW_GAP: 24,
+    START_Y: 156,
+    ROW_GAP: 14,
     MAX_ROWS: 3,
   },
   BARN: {
@@ -31,10 +31,17 @@ export const LAYOUT = {
     },
   },
   ACTION_BAR: {
-    Y: 720,
+    X: 20,
+    Y: 758,
     WIDTH: 350,
     HEIGHT: 56,
     GAP: 14,
+  },
+  INFO_PANEL: {
+    X: 12,
+    Y: 556,
+    WIDTH: 366,
+    HEIGHT: 180,
   },
   SUMMARY: {
     X: 20,
@@ -50,6 +57,9 @@ export const LAYOUT = {
     CARD_HEIGHT: 108,
     GRID_GAP_X: 10,
     GRID_GAP_Y: 10,
+  },
+  BADGE: {
+    DIAMETER: 32,
   },
   TAP_TARGET_MIN: 44,
 } as const;
@@ -75,11 +85,17 @@ export const PALETTE = {
   TEXT_DARK: '#241611',
   TEXT_LIGHT: '#f8f3e5',
   SHOP_BG: 0x5c4033,
+  // Sprint 003: new palette entries
+  LEGENDARY_GOLD: 0xd4a017,
+  LEGENDARY_BORDER: 0xffd700,
+  ABILITY_ACTIVE: 0x2d6a9f,
+  ABILITY_PASSIVE: 0x4a7c59,
+  ABILITY_TRIGGERED: 0xc4982a,
 } as const;
 
 export const ANIMATION = {
-  DRAW_SLIDE_MS: 200,
-  DRAW_POP_MS: 150,
+  DRAW_SLIDE_MS: 220,
+  DRAW_POP_MS: 120,
   NOISE_SHAKE_MS: 100,
   WARNING_GLOW_MS: 800,
   BUST_SHAKE_MS: 150,
@@ -88,6 +104,21 @@ export const ANIMATION = {
   SCORE_STAGGER_MS: 100,
   PURCHASE_FEEDBACK_MS: 200,
   BUTTON_FLASH_MS: 120,
+  // Sprint 003: new animation timings
+  STAT_POP_MS: 120,
+  INFO_PANEL_REVEAL_MS: 160,
+  INFO_PANEL_DISMISS_MS: 120,
+  ABILITY_PULSE_MS: 700,
+  BOOT_HIGHLIGHT_MS: 500,
+  FETCH_LIST_MS: 180,
+  REFRESH_PULSE_MS: 200,
+  LEGENDARY_GLOW_MS: 900,
+  LEGENDARY_SHINE_MS: 1400,
+  WIN_BURST_MS: 450,
+  WIN_OVERLAY_RISE_MS: 260,
+  BOOT_REMOVAL_MS: 200,
+  LONG_PRESS_MS: 300,
+  LONG_PRESS_MOVE_THRESHOLD: 10,
 } as const;
 
 export const GAME_LIMITS = {
@@ -99,20 +130,31 @@ export const GAME_LIMITS = {
     8: 4,
   },
   MAX_SHOP_STOCK_PER_ANIMAL: 3,
+  LEGENDARY_WIN_COUNT: 3,
 } as const;
 
 export const TEXTURES = {
   CARD_PARCHMENT: 'ui-card-parchment',
   CARD_NOISY: 'ui-card-noisy',
+  CARD_LEGENDARY: 'ui-card-legendary',
   SLOT_EMPTY: 'ui-slot-empty',
   SLOT_OCCUPIED: 'ui-slot-occupied',
   BADGE_MISCHIEF: 'ui-badge-mischief',
   BADGE_HAY: 'ui-badge-hay',
+  BADGE_MISCHIEF_LG: 'ui-badge-mischief-lg',
+  BADGE_HAY_LG: 'ui-badge-hay-lg',
+  BADGE_NOISY_STRIPE: 'ui-badge-noisy-stripe',
+  BADGE_STAR: 'ui-badge-star',
+  ABILITY_STRIP_ACTIVE: 'ui-ability-strip-active',
+  ABILITY_STRIP_PASSIVE: 'ui-ability-strip-passive',
+  ABILITY_STRIP_TRIGGERED: 'ui-ability-strip-triggered',
+  INFO_PANEL_BG: 'ui-info-panel-bg',
   NOISE_DOT_EMPTY: 'ui-noise-dot-empty',
   NOISE_DOT_FILLED: 'ui-noise-dot-filled',
   BUTTON_PRIMARY: 'ui-button-primary',
   BUTTON_SECONDARY: 'ui-button-secondary',
   BUTTON_DISABLED: 'ui-button-disabled',
+  BUTTON_DANGER: 'ui-button-danger',
   BARN_PLANK: 'env-barn-plank',
   RAFTER: 'env-rafter',
   FLOOR_STRAW: 'env-floor-straw',
@@ -127,7 +169,9 @@ export const DOM_PHASE = {
   ANIMATING_DRAW: 'animating_draw',
   PLAYER_DECISION: 'player_decision',
   WARNING: 'warning',
+  ABILITY_DECISION: 'ability_decision',
   BUST: 'bust',
   NIGHT_SUMMARY: 'night_summary',
+  WIN: 'win',
   SHOP: 'shop',
 } as const;

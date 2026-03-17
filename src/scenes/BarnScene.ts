@@ -9,11 +9,21 @@ import {
   getFarmhouseWindowRect,
   getActionBarPosition,
   getOverlayBounds,
+  getInfoPanelBounds,
 } from './barnLayout';
 import { SceneKey } from '../types';
 import * as gameStore from '../game/gameStore';
-import { drawAnimalInSession, callItANightInSession } from '../game/session';
+import {
+  drawAnimalInSession,
+  callItANightInSession,
+  acceptPeekInSession,
+  rejectPeekInSession,
+  executeBootInSession,
+  executeFetchInSession,
+  activateManualAbilityInSession,
+} from '../game/session';
 import { getAnimalDef } from '../game/animals';
+import { ABILITY_REGISTRY } from '../game/abilities';
 import { parseSeedFromSearch } from '../game/deck';
 import type {
   GameSession,
@@ -21,6 +31,7 @@ import type {
   NightScoreSummary,
   NightScoreLine,
   CardInstance,
+  AnimalId,
 } from '../game/types';
 import { GamePhase } from '../game/types';
 
@@ -57,6 +68,7 @@ export class BarnScene extends Phaser.Scene {
   private capacityText!: Phaser.GameObjects.Text;
   private deckCountText!: Phaser.GameObjects.Text;
   private pennedUpText!: Phaser.GameObjects.Text;
+  private legendaryText!: Phaser.GameObjects.Text;
 
   // Noise meter
   private noiseDots: Phaser.GameObjects.Image[] = [];
@@ -66,14 +78,23 @@ export class BarnScene extends Phaser.Scene {
   private primaryButtonText!: Phaser.GameObjects.Text;
   private secondaryButton: Phaser.GameObjects.Image | null = null;
   private secondaryButtonText: Phaser.GameObjects.Text | null = null;
+  private actionBarVisible = true;
 
   // Overlays
   private bustOverlay: Phaser.GameObjects.Container | null = null;
   private summaryOverlay: Phaser.GameObjects.Container | null = null;
+  private infoPanelOverlay: Phaser.GameObjects.Container | null = null;
+  private abilityOverlay: Phaser.GameObjects.Container | null = null;
+  private winOverlay: Phaser.GameObjects.Container | null = null;
 
   // State tracking
   private isAnimating = false;
   private hasDoneFirstDraw = false;
+  private bustOverlaySummary: NightScoreSummary | null = null;
+
+  // Long-press
+  private longPressTimer: Phaser.Time.TimerEvent | null = null;
+  private longPressStartPos: { x: number; y: number } | null = null;
 
   constructor() {
     super(SceneKey.Barn);
@@ -91,12 +112,17 @@ export class BarnScene extends Phaser.Scene {
     this.hasDoneFirstDraw = false;
     this.bustOverlay = null;
     this.summaryOverlay = null;
+    this.infoPanelOverlay = null;
+    this.abilityOverlay = null;
+    this.winOverlay = null;
+    this.bustOverlaySummary = null;
     this.cardContainers = [];
     this.slotImages = [];
     this.noiseDots = [];
     this.secondaryButton = null;
     this.secondaryButtonText = null;
     this.windowGlowTween = null;
+    this.actionBarVisible = true;
 
     const state = gameStore.getState();
     const capacity = state.capacity;
@@ -167,6 +193,15 @@ export class BarnScene extends Phaser.Scene {
       })
       .setOrigin(0);
 
+    // Legendary tracker
+    const legendaryCount = night?.legendaryCount ?? 0;
+    this.legendaryText = this.add
+      .text(bannerRect.x + 260, bannerRect.y, `Legendary: ${legendaryCount}/3`, {
+        ...TEXT_STYLE_LIGHT,
+        fontSize: '12px',
+      })
+      .setOrigin(0);
+
     // === Noise meter ===
     const noiseRect = getNoiseMeterPosition(capacity);
     this.add
@@ -196,7 +231,7 @@ export class BarnScene extends Phaser.Scene {
 
     // === Penned up indicator ===
     this.pennedUpText = this.add
-      .text(bannerRect.x + 240, bannerRect.y, '', {
+      .text(bannerRect.x + 120, bannerRect.y + 42, '', {
         ...TEXT_STYLE_LIGHT,
         fontSize: '12px',
       })
@@ -212,13 +247,10 @@ export class BarnScene extends Phaser.Scene {
       for (let i = 0; i < night.barn.length; i++) {
         this.renderCardInSlot(night.barn[i], i, false);
       }
-      // Update noise meter for resumed state
       this.updateNoiseMeter(night.noisyCount);
-      // If warning is active, start glow
       if (night.warning) {
         this.startWindowGlow();
       }
-      // Show dual buttons if game is still in progress
       if (!night.complete && !night.bust) {
         this.createActionButtons(true);
       }
@@ -227,6 +259,8 @@ export class BarnScene extends Phaser.Scene {
     // Handle resuming into bust or summary state
     if (night?.bust) {
       this.showBustOverlay(night.bust.type === 'farmer' ? 'FARMER WOKE UP!' : 'BARN OVERWHELMED!');
+    } else if (night?.wonThisNight) {
+      this.showWinOverlay(state);
     } else if (night?.complete && night.summary) {
       this.showNightSummaryOverlay(night.summary, state);
     }
@@ -254,11 +288,17 @@ export class BarnScene extends Phaser.Scene {
         case GamePhase.Warning:
           phase = DOM_PHASE.WARNING;
           break;
+        case GamePhase.AbilityDecision:
+          phase = DOM_PHASE.ABILITY_DECISION;
+          break;
         case GamePhase.Bust:
           phase = DOM_PHASE.BUST;
           break;
         case GamePhase.NightSummary:
           phase = DOM_PHASE.NIGHT_SUMMARY;
+          break;
+        case GamePhase.Win:
+          phase = DOM_PHASE.WIN;
           break;
         default:
           break;
@@ -272,7 +312,6 @@ export class BarnScene extends Phaser.Scene {
   // === Button creation ===
 
   private createActionButtons(dual: boolean): void {
-    // Clean up existing buttons
     if (this.primaryButton) {
       this.primaryButton.destroy();
       this.primaryButtonText.destroy();
@@ -287,7 +326,6 @@ export class BarnScene extends Phaser.Scene {
     const state = gameStore.getState();
     const layout = getActionBarPosition(state.capacity, dual);
 
-    // Primary button
     this.primaryButton = this.add
       .image(layout.primary.x, layout.primary.y, TEXTURES.BUTTON_PRIMARY)
       .setOrigin(0)
@@ -310,7 +348,6 @@ export class BarnScene extends Phaser.Scene {
 
     this.primaryButton.on('pointerdown', this.onDrawAnimal, this);
 
-    // Secondary button (call it a night)
     if (dual && layout.secondary) {
       this.secondaryButton = this.add
         .image(layout.secondary.x, layout.secondary.y, TEXTURES.BUTTON_SECONDARY)
@@ -354,6 +391,26 @@ export class BarnScene extends Phaser.Scene {
       this.secondaryButton.setInteractive();
       this.secondaryButton.setAlpha(1);
       this.secondaryButtonText!.setAlpha(1);
+    }
+  }
+
+  private hideActionBar(): void {
+    this.actionBarVisible = false;
+    this.primaryButton.setVisible(false);
+    this.primaryButtonText.setVisible(false);
+    if (this.secondaryButton) {
+      this.secondaryButton.setVisible(false);
+      this.secondaryButtonText!.setVisible(false);
+    }
+  }
+
+  private showActionBar(): void {
+    this.actionBarVisible = true;
+    this.primaryButton.setVisible(true);
+    this.primaryButtonText.setVisible(true);
+    if (this.secondaryButton) {
+      this.secondaryButton.setVisible(true);
+      this.secondaryButtonText!.setVisible(true);
     }
   }
 
@@ -407,6 +464,10 @@ export class BarnScene extends Phaser.Scene {
     let bustTriggered = false;
     let bustMessage = '';
     let nightScored: NightScoreSummary | null = null;
+    let winTriggered = false;
+    let peekOffered = false;
+    let fetchRequested = false;
+    let abilitiesRefreshedCardIds: string[] = [];
 
     // Parse all events first
     for (const event of events) {
@@ -426,6 +487,18 @@ export class BarnScene extends Phaser.Scene {
           break;
         case 'night_scored':
           nightScored = event.summary;
+          break;
+        case 'win_triggered':
+          winTriggered = true;
+          break;
+        case 'peek_offered':
+          peekOffered = true;
+          break;
+        case 'fetch_requested':
+          fetchRequested = true;
+          break;
+        case 'abilities_refreshed':
+          abilitiesRefreshedCardIds = event.refreshedCardIds;
           break;
       }
     }
@@ -449,6 +522,13 @@ export class BarnScene extends Phaser.Scene {
       });
     }
 
+    // Refresh pulse
+    if (abilitiesRefreshedCardIds.length > 0) {
+      animationChain = animationChain.then(() => {
+        this.animateRefreshPulse(abilitiesRefreshedCardIds);
+      });
+    }
+
     // Bust
     if (bustTriggered) {
       animationChain = animationChain.then(() => {
@@ -463,15 +543,18 @@ export class BarnScene extends Phaser.Scene {
       this.updateDomPhase(session);
 
       if (bustTriggered) {
-        // Bust overlay has its own continue button; don't re-enable draw buttons
         if (nightScored) {
-          // Store summary for the continue button in bust overlay
           this.bustOverlaySummary = nightScored;
         }
+      } else if (winTriggered) {
+        this.showWinOverlay(session);
+      } else if (peekOffered) {
+        this.showPeekUI(session);
+      } else if (fetchRequested) {
+        this.showFetchUI(session);
       } else if (session.currentNight?.complete && nightScored) {
         this.showNightSummaryOverlay(nightScored, session);
       } else {
-        // Switch to dual buttons after first draw
         if (!this.hasDoneFirstDraw) {
           this.hasDoneFirstDraw = true;
           this.createActionButtons(true);
@@ -482,9 +565,7 @@ export class BarnScene extends Phaser.Scene {
     });
   }
 
-  private bustOverlaySummary: NightScoreSummary | null = null;
-
-  // === Card rendering ===
+  // === Card rendering (Sprint 003 readability overhaul) ===
 
   private renderCardInSlot(
     card: CardInstance,
@@ -497,62 +578,179 @@ export class BarnScene extends Phaser.Scene {
     if (!slot) return this.add.container(0, 0);
 
     const animalDef = getAnimalDef(card.animalId);
+    const ability = ABILITY_REGISTRY[animalDef.abilityKind];
     const container = this.add.container(slot.x, slot.y);
 
-    // Card background
-    const cardBgTexture = animalDef.noisy ? TEXTURES.CARD_NOISY : TEXTURES.CARD_PARCHMENT;
+    // Card background based on tier
+    let cardBgTexture: string;
+    if (animalDef.tier === 'legendary') {
+      cardBgTexture = TEXTURES.CARD_LEGENDARY;
+    } else if (animalDef.noisy) {
+      cardBgTexture = TEXTURES.CARD_NOISY;
+    } else {
+      cardBgTexture = TEXTURES.CARD_PARCHMENT;
+    }
     const cardBg = this.add.image(0, 0, cardBgTexture).setOrigin(0).setDisplaySize(slot.w, slot.h);
     container.add(cardBg);
 
+    // NOISY! stripe overlay at top of card
+    if (animalDef.noisy) {
+      const stripe = this.add
+        .image(0, 0, TEXTURES.BADGE_NOISY_STRIPE)
+        .setOrigin(0)
+        .setDisplaySize(slot.w, 20);
+      container.add(stripe);
+      const noisyLabel = this.add
+        .text(slot.w / 2, 10, 'NOISY!', {
+          fontFamily: 'monospace',
+          fontSize: '10px',
+          fontStyle: 'bold',
+          color: '#ffffff',
+        })
+        .setOrigin(0.5);
+      container.add(noisyLabel);
+    }
+
     // Animal sprite (pixel art scaled 2x, centered in card)
+    const spriteY = animalDef.noisy ? slot.h / 2 - 2 : slot.h / 2 - 8;
     const sprite = this.add
-      .sprite(slot.w / 2, slot.h / 2 - 8, 'animals', card.animalId)
+      .sprite(slot.w / 2, spriteY, 'animals', card.animalId)
       .setOrigin(0.5)
       .setScale(2);
     container.add(sprite);
 
-    // Animal name at bottom
+    // Name strip at bottom (h=20)
+    const nameY = slot.h - 10;
     const nameText = this.add
-      .text(slot.w / 2, slot.h - 14, animalDef.name, {
+      .text(slot.w / 2, nameY, animalDef.name, {
         ...TEXT_STYLE_DARK,
-        fontSize: '9px',
+        fontSize: '11px',
         fontStyle: 'bold',
       })
       .setOrigin(0.5);
     container.add(nameText);
 
-    // Resource badges
+    // Resource badges (32px, gold for Mischief top-left, green for Hay top-right)
+    const badgeY = animalDef.noisy ? 22 : 4;
     if (animalDef.mischief !== 0) {
-      const badgeMischief = this.add
-        .image(4, 4, TEXTURES.BADGE_MISCHIEF)
-        .setOrigin(0)
-        .setScale(0.5);
-      container.add(badgeMischief);
-      const mischiefVal = this.add
-        .text(20, 6, `${animalDef.mischief}`, {
+      const badge = this.add.image(4, badgeY, TEXTURES.BADGE_MISCHIEF_LG).setOrigin(0);
+      container.add(badge);
+      const val = this.add
+        .text(20, badgeY + 9, `${animalDef.mischief}`, {
           ...TEXT_STYLE_DARK,
-          fontSize: '10px',
+          fontSize: '14px',
           fontStyle: 'bold',
         })
-        .setOrigin(0);
-      container.add(mischiefVal);
+        .setOrigin(0.5);
+      container.add(val);
     }
 
     if (animalDef.hay !== 0) {
-      const badgeHay = this.add
-        .image(slot.w - 32, 4, TEXTURES.BADGE_HAY)
-        .setOrigin(0)
-        .setScale(0.5);
-      container.add(badgeHay);
-      const hayVal = this.add
-        .text(slot.w - 16, 6, `${animalDef.hay}`, {
+      const badge = this.add.image(slot.w - 36, badgeY, TEXTURES.BADGE_HAY_LG).setOrigin(0);
+      container.add(badge);
+      const val = this.add
+        .text(slot.w - 20, badgeY + 9, `${animalDef.hay}`, {
           ...TEXT_STYLE_DARK,
-          fontSize: '10px',
+          fontSize: '14px',
           fontStyle: 'bold',
         })
-        .setOrigin(0);
-      container.add(hayVal);
+        .setOrigin(0.5);
+      container.add(val);
     }
+
+    // Ability keyword chip at bottom of card
+    if (ability.kind !== 'none' && ability.label) {
+      let chipTexture: string;
+      let chipTextColor = '#ffffff';
+      if (ability.trigger === 'on_enter' || ability.trigger === 'manual') {
+        chipTexture = TEXTURES.ABILITY_STRIP_ACTIVE;
+      } else if (ability.trigger === 'passive') {
+        chipTexture = TEXTURES.ABILITY_STRIP_PASSIVE;
+      } else {
+        chipTexture = TEXTURES.ABILITY_STRIP_TRIGGERED;
+        chipTextColor = PALETTE.TEXT_DARK;
+      }
+      const chipY = slot.h - 24;
+      const chip = this.add.image(0, chipY, chipTexture).setOrigin(0).setDisplaySize(slot.w, 14);
+      container.add(chip);
+      const chipLabel = this.add
+        .text(slot.w / 2, chipY + 7, ability.label.toUpperCase(), {
+          fontFamily: 'monospace',
+          fontSize: '9px',
+          fontStyle: 'bold',
+          color: chipTextColor,
+        })
+        .setOrigin(0.5);
+      container.add(chipLabel);
+    }
+
+    // Legendary shimmer border
+    if (animalDef.tier === 'legendary') {
+      const star = this.add.image(slot.w - 14, 6, TEXTURES.BADGE_STAR).setOrigin(0.5, 0);
+      container.add(star);
+
+      // Animated gold border glow
+      const glowBorder = this.add
+        .rectangle(slot.w / 2, slot.h / 2, slot.w + 4, slot.h + 4)
+        .setStrokeStyle(2, PALETTE.LEGENDARY_BORDER, 0.35);
+      container.addAt(glowBorder, 0);
+      this.tweens.add({
+        targets: glowBorder,
+        alpha: { from: 0.35, to: 0.8 },
+        duration: ANIMATION.LEGENDARY_GLOW_MS,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.easeInOut',
+      });
+    }
+
+    // Manual ability indicator (tap indicator for unused manual abilities)
+    if (ability.trigger === 'manual' && !card.abilityUsed && !this.isAnimating) {
+      const tapIndicator = this.add
+        .text(slot.w / 2, slot.h - 38, 'TAP', {
+          fontFamily: 'monospace',
+          fontSize: '8px',
+          fontStyle: 'bold',
+          color: '#ffd700',
+        })
+        .setOrigin(0.5);
+      container.add(tapIndicator);
+    }
+
+    // Long-press + tap interactivity on card
+    const hitArea = this.add
+      .rectangle(0, 0, slot.w, slot.h)
+      .setOrigin(0)
+      .setAlpha(0.001)
+      .setInteractive();
+    container.add(hitArea);
+
+    hitArea.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+      this.longPressStartPos = { x: pointer.x, y: pointer.y };
+      this.longPressTimer = this.time.delayedCall(ANIMATION.LONG_PRESS_MS, () => {
+        this.showInfoPanel(card);
+      });
+    });
+
+    hitArea.on('pointermove', (pointer: Phaser.Input.Pointer) => {
+      if (this.longPressStartPos && this.longPressTimer) {
+        const dx = pointer.x - this.longPressStartPos.x;
+        const dy = pointer.y - this.longPressStartPos.y;
+        if (Math.sqrt(dx * dx + dy * dy) > ANIMATION.LONG_PRESS_MOVE_THRESHOLD) {
+          this.longPressTimer.destroy();
+          this.longPressTimer = null;
+        }
+      }
+    });
+
+    hitArea.on('pointerup', () => {
+      if (this.longPressTimer) {
+        this.longPressTimer.destroy();
+        this.longPressTimer = null;
+        // This was a short tap, check for manual ability
+        this.onCardTap(card);
+      }
+    });
 
     if (animated) {
       container.setScale(0.5);
@@ -561,6 +759,566 @@ export class BarnScene extends Phaser.Scene {
 
     this.cardContainers.push(container);
     return container;
+  }
+
+  private onCardTap(card: CardInstance): void {
+    if (this.isAnimating) return;
+    if (this.infoPanelOverlay) return;
+
+    const session = gameStore.getState();
+    const night = session.currentNight;
+    if (!night || night.complete) return;
+
+    // Check for manual ability activation
+    const def = getAnimalDef(card.animalId);
+    const ability = ABILITY_REGISTRY[def.abilityKind];
+    if (ability.trigger === 'manual' && !card.abilityUsed) {
+      const result = activateManualAbilityInSession(session, card.id);
+      gameStore.setState(result.session);
+      this.updateDomPhase(result.session);
+
+      // If boot requested, show boot UI
+      if (result.session.currentNight?.pendingDecision?.kind === 'boot') {
+        this.showBootUI(result.session);
+      }
+    }
+  }
+
+  // === Info Panel ===
+
+  private showInfoPanel(card: CardInstance): void {
+    if (this.infoPanelOverlay) return;
+
+    const bounds = getInfoPanelBounds();
+    const animalDef = getAnimalDef(card.animalId);
+    const ability = ABILITY_REGISTRY[animalDef.abilityKind];
+
+    this.hideActionBar();
+
+    const overlay = this.add.container(bounds.x, LAYOUT.CANVAS.HEIGHT);
+
+    // Background
+    const bg = this.add.image(0, 0, TEXTURES.INFO_PANEL_BG).setOrigin(0);
+    overlay.add(bg);
+
+    // Portrait frame
+    const portrait = this.add
+      .sprite(24 + 36, 18 + 36, 'animals', card.animalId)
+      .setOrigin(0.5)
+      .setScale(3);
+    overlay.add(portrait);
+
+    // Name
+    const name = this.add
+      .text(110, 20, animalDef.name, {
+        ...TEXT_STYLE_LIGHT,
+        fontSize: '16px',
+        fontStyle: 'bold',
+      })
+      .setOrigin(0, 0);
+    overlay.add(name);
+
+    // Tier badge
+    if (animalDef.tier === 'legendary') {
+      const tierBadge = this.add
+        .text(110, 40, 'LEGENDARY', {
+          fontFamily: 'monospace',
+          fontSize: '10px',
+          fontStyle: 'bold',
+          color: '#ffd700',
+        })
+        .setOrigin(0, 0);
+      overlay.add(tierBadge);
+    }
+
+    // Resource badges
+    const badgeY = 54;
+    const mBadge = this.add.image(110, badgeY, TEXTURES.BADGE_MISCHIEF).setOrigin(0, 0);
+    overlay.add(mBadge);
+    const mText = this.add
+      .text(136, badgeY + 4, `${animalDef.mischief}`, {
+        ...TEXT_STYLE_LIGHT,
+        fontSize: '14px',
+        fontStyle: 'bold',
+      })
+      .setOrigin(0, 0);
+    overlay.add(mText);
+
+    const hBadge = this.add.image(176, badgeY, TEXTURES.BADGE_HAY).setOrigin(0, 0);
+    overlay.add(hBadge);
+    const hText = this.add
+      .text(202, badgeY + 4, `${animalDef.hay}`, {
+        ...TEXT_STYLE_LIGHT,
+        fontSize: '14px',
+        fontStyle: 'bold',
+      })
+      .setOrigin(0, 0);
+    overlay.add(hText);
+
+    // Trait row
+    const traits: string[] = [];
+    if (animalDef.noisy) traits.push('NOISY!');
+    if (ability.kind !== 'none') traits.push(ability.label.toUpperCase());
+    if (animalDef.tier === 'legendary') traits.push('LEGENDARY');
+    const traitText = this.add
+      .text(110, 88, traits.join(' | '), {
+        ...TEXT_STYLE_LIGHT,
+        fontSize: '11px',
+      })
+      .setOrigin(0, 0);
+    overlay.add(traitText);
+
+    // Ability text
+    const abilityText = this.add
+      .text(24, 112, ability.description, {
+        ...TEXT_STYLE_LIGHT,
+        fontSize: '12px',
+        wordWrap: { width: 330 },
+      })
+      .setOrigin(0, 0);
+    overlay.add(abilityText);
+
+    // Slide up animation
+    this.tweens.add({
+      targets: overlay,
+      y: bounds.y,
+      alpha: { from: 0, to: 1 },
+      duration: ANIMATION.INFO_PANEL_REVEAL_MS,
+      ease: 'Cubic.easeOut',
+    });
+
+    // Full-screen invisible hit area for dismiss
+    const dismissArea = this.add
+      .rectangle(0, 0, LAYOUT.CANVAS.WIDTH, LAYOUT.CANVAS.HEIGHT)
+      .setOrigin(0)
+      .setAlpha(0.001)
+      .setInteractive()
+      .setDepth(-1);
+
+    dismissArea.on('pointerdown', () => {
+      this.dismissInfoPanel(overlay, dismissArea);
+    });
+
+    this.infoPanelOverlay = overlay;
+  }
+
+  private dismissInfoPanel(
+    overlay: Phaser.GameObjects.Container,
+    dismissArea: Phaser.GameObjects.Rectangle,
+  ): void {
+    this.tweens.add({
+      targets: overlay,
+      y: LAYOUT.CANVAS.HEIGHT,
+      alpha: 0,
+      duration: ANIMATION.INFO_PANEL_DISMISS_MS,
+      ease: 'Cubic.easeIn',
+      onComplete: () => {
+        overlay.destroy();
+        dismissArea.destroy();
+        this.infoPanelOverlay = null;
+        this.showActionBar();
+      },
+    });
+  }
+
+  // === Peek UI ===
+
+  private showPeekUI(session: GameSession): void {
+    const night = session.currentNight;
+    if (!night?.pendingDecision || night.pendingDecision.kind !== 'peek') return;
+
+    this.hideActionBar();
+    const decision = night.pendingDecision;
+    const previewCard = decision.previewCard;
+    const animalDef = getAnimalDef(previewCard.animalId);
+
+    const overlay = this.add.container(0, 0);
+
+    // Preview card centered above action bar
+    const cx = LAYOUT.CANVAS.WIDTH / 2;
+    const cy = 600;
+
+    let cardBgTexture: string;
+    if (animalDef.tier === 'legendary') {
+      cardBgTexture = TEXTURES.CARD_LEGENDARY;
+    } else if (animalDef.noisy) {
+      cardBgTexture = TEXTURES.CARD_NOISY;
+    } else {
+      cardBgTexture = TEXTURES.CARD_PARCHMENT;
+    }
+
+    const cardBg = this.add
+      .image(cx - 48, cy - 52, cardBgTexture)
+      .setOrigin(0)
+      .setDisplaySize(96, 104);
+    overlay.add(cardBg);
+
+    const sprite = this.add
+      .sprite(cx, cy, 'animals', previewCard.animalId)
+      .setOrigin(0.5)
+      .setScale(2.5);
+    overlay.add(sprite);
+
+    const nameText = this.add
+      .text(cx, cy + 42, animalDef.name, {
+        ...TEXT_STYLE_LIGHT,
+        fontSize: '14px',
+        fontStyle: 'bold',
+      })
+      .setOrigin(0.5);
+    overlay.add(nameText);
+
+    const infoText = this.add
+      .text(cx, cy + 60, `M:${animalDef.mischief} H:${animalDef.hay}`, {
+        ...TEXT_STYLE_LIGHT,
+        fontSize: '12px',
+      })
+      .setOrigin(0.5);
+    overlay.add(infoText);
+
+    // Accept button (green)
+    const btnY = LAYOUT.ACTION_BAR.Y;
+    const btnW = 160;
+    const btnH = 48;
+
+    const acceptBtn = this.add
+      .image(cx - btnW - 8, btnY, TEXTURES.BUTTON_PRIMARY)
+      .setOrigin(0)
+      .setDisplaySize(btnW, btnH)
+      .setInteractive();
+    overlay.add(acceptBtn);
+
+    const acceptLabel = this.add
+      .text(cx - btnW / 2 - 8, btnY + btnH / 2, 'ACCEPT', {
+        ...TEXT_STYLE_LIGHT,
+        fontSize: '16px',
+        fontStyle: 'bold',
+      })
+      .setOrigin(0.5);
+    overlay.add(acceptLabel);
+
+    // Reject button (red)
+    const rejectBtn = this.add
+      .image(cx + 8, btnY, TEXTURES.BUTTON_DANGER)
+      .setOrigin(0)
+      .setDisplaySize(btnW, btnH)
+      .setInteractive();
+    overlay.add(rejectBtn);
+
+    const rejectLabel = this.add
+      .text(cx + btnW / 2 + 8, btnY + btnH / 2, 'REJECT', {
+        ...TEXT_STYLE_LIGHT,
+        fontSize: '16px',
+        fontStyle: 'bold',
+      })
+      .setOrigin(0.5);
+    overlay.add(rejectLabel);
+
+    acceptBtn.on('pointerdown', () => {
+      overlay.destroy();
+      this.abilityOverlay = null;
+      const currentSession = gameStore.getState();
+      const result = acceptPeekInSession(currentSession);
+      gameStore.setState(result.session);
+      this.showActionBar();
+      this.rebuildBarnDisplay(result.session);
+      this.updateHud(result.session);
+      this.updateDomPhase(result.session);
+      this.handlePostAbilityState(result.session, result.events);
+    });
+
+    rejectBtn.on('pointerdown', () => {
+      overlay.destroy();
+      this.abilityOverlay = null;
+      const currentSession = gameStore.getState();
+      const result = rejectPeekInSession(currentSession);
+      gameStore.setState(result.session);
+      this.showActionBar();
+      this.updateHud(result.session);
+      this.updateDomPhase(result.session);
+      this.enableButtons();
+    });
+
+    this.abilityOverlay = overlay;
+  }
+
+  // === Boot UI ===
+
+  private showBootUI(session: GameSession): void {
+    const night = session.currentNight;
+    if (!night?.pendingDecision || night.pendingDecision.kind !== 'boot') return;
+
+    this.hideActionBar();
+    const decision = night.pendingDecision;
+    const validTargetIds = new Set(decision.validTargetCardIds);
+
+    const overlay = this.add.container(0, 0);
+
+    // Instructional text
+    const instrText = this.add
+      .text(LAYOUT.CANVAS.WIDTH / 2, 520, 'Tap an animal to remove', {
+        ...TEXT_STYLE_LIGHT,
+        fontSize: '14px',
+        fontStyle: 'bold',
+      })
+      .setOrigin(0.5);
+    overlay.add(instrText);
+
+    // Highlight valid targets
+    const slotRects = getDynamicSlotRects(session.capacity);
+    for (let i = 0; i < night.barn.length; i++) {
+      const card = night.barn[i];
+      const slot = slotRects[i];
+      if (!slot) continue;
+
+      if (validTargetIds.has(card.id)) {
+        const highlight = this.add
+          .rectangle(slot.x + slot.w / 2, slot.y + slot.h / 2, slot.w + 4, slot.h + 4)
+          .setStrokeStyle(3, PALETTE.BUST, 0.8);
+        overlay.add(highlight);
+        this.tweens.add({
+          targets: highlight,
+          alpha: { from: 0.4, to: 1 },
+          duration: ANIMATION.BOOT_HIGHLIGHT_MS,
+          yoyo: true,
+          repeat: -1,
+          ease: 'Sine.easeInOut',
+        });
+
+        // Make targetable
+        const hitArea = this.add
+          .rectangle(slot.x, slot.y, slot.w, slot.h)
+          .setOrigin(0)
+          .setAlpha(0.001)
+          .setInteractive();
+        overlay.add(hitArea);
+
+        hitArea.on('pointerdown', () => {
+          this.executeBootTarget(card.id, overlay);
+        });
+      }
+    }
+
+    // Cancel/forfeit button
+    const cancelBtn = this.add
+      .image(LAYOUT.CANVAS.WIDTH / 2 - 80, LAYOUT.ACTION_BAR.Y, TEXTURES.BUTTON_SECONDARY)
+      .setOrigin(0)
+      .setDisplaySize(160, 48)
+      .setInteractive();
+    overlay.add(cancelBtn);
+
+    const cancelLabel = this.add
+      .text(LAYOUT.CANVAS.WIDTH / 2, LAYOUT.ACTION_BAR.Y + 24, 'CANCEL', {
+        ...TEXT_STYLE_LIGHT,
+        fontSize: '16px',
+        fontStyle: 'bold',
+      })
+      .setOrigin(0.5);
+    overlay.add(cancelLabel);
+
+    cancelBtn.on('pointerdown', () => {
+      // Boot self = forfeit
+      this.executeBootTarget(decision.sourceCardId, overlay);
+    });
+
+    this.abilityOverlay = overlay;
+  }
+
+  private executeBootTarget(targetCardId: string, overlay: Phaser.GameObjects.Container): void {
+    overlay.destroy();
+    this.abilityOverlay = null;
+
+    const currentSession = gameStore.getState();
+    const result = executeBootInSession(currentSession, targetCardId);
+    gameStore.setState(result.session);
+
+    this.showActionBar();
+    this.rebuildBarnDisplay(result.session);
+    this.updateHud(result.session);
+    this.updateDomPhase(result.session);
+    this.enableButtons();
+  }
+
+  // === Fetch UI ===
+
+  private showFetchUI(session: GameSession): void {
+    const night = session.currentNight;
+    if (!night?.pendingDecision || night.pendingDecision.kind !== 'fetch') return;
+
+    this.hideActionBar();
+    const decision = night.pendingDecision;
+
+    const overlay = this.add.container(0, 0);
+
+    // Semi-transparent background
+    const bg = this.add
+      .rectangle(0, 0, LAYOUT.CANVAS.WIDTH, LAYOUT.CANVAS.HEIGHT, 0x000000, 0.6)
+      .setOrigin(0)
+      .setInteractive();
+    overlay.add(bg);
+
+    // Title
+    const titleText = this.add
+      .text(LAYOUT.CANVAS.WIDTH / 2, 400, 'Choose an animal to fetch', {
+        ...TEXT_STYLE_LIGHT,
+        fontSize: '16px',
+        fontStyle: 'bold',
+      })
+      .setOrigin(0.5);
+    overlay.add(titleText);
+
+    // Candidate list
+    const startY = 440;
+    const itemHeight = 44;
+    decision.validAnimalIds.forEach((animalId: AnimalId, index: number) => {
+      const def = getAnimalDef(animalId);
+      const y = startY + index * itemHeight;
+
+      const itemBg = this.add
+        .rectangle(LAYOUT.CANVAS.WIDTH / 2, y + itemHeight / 2, 300, 40, 0x333333, 0.8)
+        .setInteractive();
+      overlay.add(itemBg);
+
+      const itemText = this.add
+        .text(LAYOUT.CANVAS.WIDTH / 2, y + itemHeight / 2, def.name, {
+          ...TEXT_STYLE_LIGHT,
+          fontSize: '14px',
+          fontStyle: 'bold',
+        })
+        .setOrigin(0.5);
+      overlay.add(itemText);
+
+      itemBg.on('pointerdown', () => {
+        this.executeFetchChoice(animalId, overlay);
+      });
+    });
+
+    // Cancel button
+    const cancelY = startY + decision.validAnimalIds.length * itemHeight + 16;
+    const cancelBtn = this.add
+      .rectangle(LAYOUT.CANVAS.WIDTH / 2, cancelY + 24, 160, 40, 0x555555, 0.9)
+      .setInteractive();
+    overlay.add(cancelBtn);
+
+    const cancelLabel = this.add
+      .text(LAYOUT.CANVAS.WIDTH / 2, cancelY + 24, 'CANCEL', {
+        ...TEXT_STYLE_LIGHT,
+        fontSize: '14px',
+        fontStyle: 'bold',
+      })
+      .setOrigin(0.5);
+    overlay.add(cancelLabel);
+
+    cancelBtn.on('pointerdown', () => {
+      overlay.destroy();
+      this.abilityOverlay = null;
+      // Skip fetch by clearing the pending decision manually
+      const currentSession = gameStore.getState();
+      const pendingDecision = currentSession.currentNight?.pendingDecision;
+      if (currentSession.currentNight && pendingDecision) {
+        const night = currentSession.currentNight;
+        const sourceCardId = pendingDecision.kind === 'fetch' ? pendingDecision.sourceCardId : '';
+        const updatedNight = {
+          ...night,
+          pendingDecision: null,
+          phase: night.warning ? GamePhase.Warning : GamePhase.PlayerDecision,
+          barn: night.barn.map((c) => (c.id === sourceCardId ? { ...c, abilityUsed: true } : c)),
+        };
+        gameStore.setState({ ...currentSession, currentNight: updatedNight });
+      }
+      this.showActionBar();
+      this.updateHud(gameStore.getState());
+      this.updateDomPhase(gameStore.getState());
+      this.enableButtons();
+    });
+
+    this.abilityOverlay = overlay;
+  }
+
+  private executeFetchChoice(
+    selectedAnimalId: AnimalId,
+    overlay: Phaser.GameObjects.Container,
+  ): void {
+    overlay.destroy();
+    this.abilityOverlay = null;
+
+    const currentSession = gameStore.getState();
+    const result = executeFetchInSession(currentSession, selectedAnimalId);
+    gameStore.setState(result.session);
+
+    this.showActionBar();
+    this.rebuildBarnDisplay(result.session);
+    this.updateHud(result.session);
+    this.updateDomPhase(result.session);
+    this.handlePostAbilityState(result.session, result.events);
+  }
+
+  private handlePostAbilityState(session: GameSession, events: NightEvent[]): void {
+    const night = session.currentNight;
+    const nightScored = events.find((e) => e.type === 'night_scored');
+    const winTriggered = events.find((e) => e.type === 'win_triggered');
+
+    if (night?.bust) {
+      const summary =
+        nightScored && nightScored.type === 'night_scored' ? nightScored.summary : null;
+      if (summary) {
+        this.bustOverlaySummary = summary;
+      }
+      const bustMessage = night.bust.type === 'farmer' ? 'FARMER WOKE UP!' : 'BARN OVERWHELMED!';
+      this.showBustOverlay(bustMessage);
+    } else if (winTriggered || night?.wonThisNight) {
+      this.showWinOverlay(session);
+    } else if (night?.complete && nightScored && nightScored.type === 'night_scored') {
+      this.showNightSummaryOverlay(nightScored.summary, session);
+    } else {
+      this.enableButtons();
+    }
+  }
+
+  // === Refresh pulse animation ===
+
+  private animateRefreshPulse(cardIds: string[]): void {
+    const session = gameStore.getState();
+    const night = session.currentNight;
+    if (!night) return;
+
+    const cardIdSet = new Set(cardIds);
+    for (let i = 0; i < night.barn.length && i < this.cardContainers.length; i++) {
+      if (cardIdSet.has(night.barn[i].id)) {
+        const container = this.cardContainers[i];
+        this.tweens.add({
+          targets: container,
+          scaleX: 1.05,
+          scaleY: 1.05,
+          duration: ANIMATION.REFRESH_PULSE_MS / 2,
+          yoyo: true,
+          ease: 'Quad.easeOut',
+        });
+      }
+    }
+  }
+
+  // === Rebuild barn display (after ability execution) ===
+
+  private rebuildBarnDisplay(session: GameSession): void {
+    // Destroy existing card containers
+    for (const container of this.cardContainers) {
+      container.destroy();
+    }
+    this.cardContainers = [];
+
+    const night = session.currentNight;
+    if (!night) return;
+
+    for (let i = 0; i < night.barn.length; i++) {
+      this.renderCardInSlot(night.barn[i], i, false);
+    }
+    this.updateNoiseMeter(night.noisyCount);
+    if (night.warning) {
+      this.startWindowGlow();
+    } else {
+      this.stopWindowGlow();
+    }
   }
 
   // === Animations ===
@@ -577,13 +1335,11 @@ export class BarnScene extends Phaser.Scene {
 
       const deckPos = getDeckStackPosition(state.capacity);
 
-      // Create card at deck position
       const container = this.renderCardInSlot(card, slotIndex, true);
       container.setPosition(deckPos.x, deckPos.y);
       container.setAlpha(1);
       container.setScale(0.5);
 
-      // Slide from deck to slot
       this.tweens.add({
         targets: container,
         x: slot.x,
@@ -592,15 +1348,13 @@ export class BarnScene extends Phaser.Scene {
         duration: ANIMATION.DRAW_SLIDE_MS,
         ease: 'Back.easeOut',
         onComplete: () => {
-          // Pop effect
           this.tweens.add({
             targets: container,
             scale: 1.08,
-            duration: ANIMATION.DRAW_POP_MS / 2,
+            duration: ANIMATION.STAT_POP_MS / 2,
             yoyo: true,
             ease: 'Quad.easeInOut',
             onComplete: () => {
-              // Update deck count
               this.updateDeckCount();
               this.updateCapacityText();
               resolve();
@@ -613,7 +1367,6 @@ export class BarnScene extends Phaser.Scene {
 
   private animateBust(message: string): Promise<void> {
     return new Promise<void>((resolve) => {
-      // Camera shake
       this.cameras.main.shake(ANIMATION.BUST_SHAKE_MS, 0.01);
 
       this.time.delayedCall(ANIMATION.BUST_SHAKE_MS, () => {
@@ -661,6 +1414,7 @@ export class BarnScene extends Phaser.Scene {
     const night = session.currentNight;
     this.mischiefText.setText(`Mischief: ${session.mischief}`);
     this.hayText.setText(`Hay: ${session.hay}`);
+    this.legendaryText.setText(`Legendary: ${night?.legendaryCount ?? 0}/3`);
     this.updateDeckCount();
     this.updateCapacityText();
     this.updatePennedUpIndicator(session);
@@ -682,12 +1436,24 @@ export class BarnScene extends Phaser.Scene {
   }
 
   private updatePennedUpIndicator(session: GameSession): void {
-    const night = session.currentNight;
-    if (night?.pennedUpCard) {
-      const def = getAnimalDef(night.pennedUpCard.animalId);
-      this.pennedUpText.setText(`Penned: ${def.name}`);
+    // Array-based penned-up display
+    if (session.activePennedUpCardIds.length > 0) {
+      const names = session.activePennedUpCardIds
+        .map((id) => {
+          const card = session.herd.find((c) => c.id === id);
+          return card ? getAnimalDef(card.animalId).name : '';
+        })
+        .filter(Boolean);
+      this.pennedUpText.setText(`Penned: ${names.join(', ')}`);
     } else {
-      this.pennedUpText.setText('');
+      // Fall back to legacy
+      const night = session.currentNight;
+      if (night?.pennedUpCard) {
+        const def = getAnimalDef(night.pennedUpCard.animalId);
+        this.pennedUpText.setText(`Penned: ${def.name}`);
+      } else {
+        this.pennedUpText.setText('');
+      }
     }
   }
 
@@ -700,11 +1466,9 @@ export class BarnScene extends Phaser.Scene {
     const bounds = getOverlayBounds(state.capacity);
     const overlay = this.add.container(bounds.x, bounds.y);
 
-    // Semi-transparent background
     const bg = this.add.rectangle(0, 0, bounds.w, bounds.h, 0x000000, 0.75).setOrigin(0);
     overlay.add(bg);
 
-    // Bust message
     const bustText = this.add
       .text(bounds.w / 2, bounds.h / 2 - 40, message, {
         fontFamily: 'monospace',
@@ -716,7 +1480,6 @@ export class BarnScene extends Phaser.Scene {
       .setOrigin(0.5);
     overlay.add(bustText);
 
-    // Continue button
     const btnW = 200;
     const btnH = 48;
     const btnX = (bounds.w - btnW) / 2;
@@ -752,7 +1515,6 @@ export class BarnScene extends Phaser.Scene {
       this,
     );
 
-    // Fade in
     overlay.setAlpha(0);
     this.tweens.add({
       targets: overlay,
@@ -763,6 +1525,117 @@ export class BarnScene extends Phaser.Scene {
     this.bustOverlay = overlay;
   }
 
+  // === Win overlay ===
+
+  private showWinOverlay(session: GameSession): void {
+    if (this.winOverlay) return;
+
+    // Camera zoom burst
+    this.cameras.main.zoomTo(
+      1.04,
+      ANIMATION.WIN_BURST_MS / 2,
+      'Expo.easeOut',
+      false,
+      (_cam: unknown, progress: number) => {
+        if (progress >= 1) {
+          this.cameras.main.zoomTo(1.0, ANIMATION.WIN_BURST_MS / 2, 'Expo.easeIn');
+        }
+      },
+    );
+
+    const overlay = this.add.container(0, LAYOUT.CANVAS.HEIGHT);
+
+    const bg = this.add
+      .rectangle(0, 0, LAYOUT.CANVAS.WIDTH, LAYOUT.CANVAS.HEIGHT, 0x000000, 0.85)
+      .setOrigin(0);
+    overlay.add(bg);
+
+    // YOU WIN! text
+    const winText = this.add
+      .text(LAYOUT.CANVAS.WIDTH / 2, 200, 'YOU WIN!', {
+        fontFamily: 'monospace',
+        fontSize: '32px',
+        fontStyle: 'bold',
+        color: '#ffd700',
+      })
+      .setOrigin(0.5);
+    overlay.add(winText);
+
+    // Display Legendary sprites
+    const night = session.currentNight;
+    if (night) {
+      const legendaryCards = night.barn.filter(
+        (c) => getAnimalDef(c.animalId).tier === 'legendary',
+      );
+      const startX = LAYOUT.CANVAS.WIDTH / 2 - (legendaryCards.length - 1) * 60;
+      legendaryCards.forEach((card, i) => {
+        const x = startX + i * 120;
+        const sprite = this.add.sprite(x, 340, 'animals', card.animalId).setOrigin(0.5).setScale(3);
+        overlay.add(sprite);
+        const name = this.add
+          .text(x, 390, getAnimalDef(card.animalId).name, {
+            ...TEXT_STYLE_LIGHT,
+            fontSize: '11px',
+            fontStyle: 'bold',
+          })
+          .setOrigin(0.5);
+        overlay.add(name);
+      });
+    }
+
+    // Final score
+    const scoreText = this.add
+      .text(
+        LAYOUT.CANVAS.WIDTH / 2,
+        460,
+        `Final Mischief: ${session.mischief}\nTotal Hay: ${session.hay}\nNights: ${session.nightNumber - 1}`,
+        {
+          ...TEXT_STYLE_LIGHT,
+          fontSize: '14px',
+          align: 'center',
+        },
+      )
+      .setOrigin(0.5, 0);
+    overlay.add(scoreText);
+
+    // Play Again button
+    const btnW = 200;
+    const btnH = 56;
+    const btnX = (LAYOUT.CANVAS.WIDTH - btnW) / 2;
+    const btnY = 560;
+
+    const playAgainBtn = this.add
+      .image(btnX, btnY, TEXTURES.BUTTON_PRIMARY)
+      .setOrigin(0)
+      .setDisplaySize(btnW, btnH)
+      .setInteractive();
+    overlay.add(playAgainBtn);
+
+    const playAgainText = this.add
+      .text(btnX + btnW / 2, btnY + btnH / 2, 'Play Again', {
+        ...TEXT_STYLE_LIGHT,
+        fontSize: '18px',
+        fontStyle: 'bold',
+      })
+      .setOrigin(0.5);
+    overlay.add(playAgainText);
+
+    playAgainBtn.on('pointerdown', () => {
+      gameStore.reset();
+      this.scene.start(SceneKey.Barn);
+    });
+
+    // Rise animation
+    this.tweens.add({
+      targets: overlay,
+      y: 0,
+      duration: ANIMATION.WIN_OVERLAY_RISE_MS,
+      ease: 'Back.easeOut',
+    });
+
+    this.winOverlay = overlay;
+  }
+
   // === Night Summary overlay ===
 
   private showNightSummaryOverlay(summary: NightScoreSummary, session: GameSession): void {
@@ -771,11 +1644,9 @@ export class BarnScene extends Phaser.Scene {
     const bounds = getOverlayBounds(session.capacity);
     const overlay = this.add.container(bounds.x, bounds.y);
 
-    // Semi-transparent background
     const bg = this.add.rectangle(0, 0, bounds.w, bounds.h, 0x000000, 0.85).setOrigin(0);
     overlay.add(bg);
 
-    // Title
     const titleStr = summary.reason === 'bust' ? 'Night Summary (Bust!)' : 'Night Summary';
     const title = this.add
       .text(bounds.w / 2, 20, titleStr, {
@@ -786,7 +1657,6 @@ export class BarnScene extends Phaser.Scene {
       .setOrigin(0.5, 0);
     overlay.add(title);
 
-    // Score lines
     let lineY = 60;
     const lineHeight = 24;
 
@@ -801,7 +1671,6 @@ export class BarnScene extends Phaser.Scene {
         .setOrigin(0);
       overlay.add(lineText);
 
-      // Stagger animation
       lineText.setAlpha(0);
       this.tweens.add({
         targets: lineText,
@@ -811,7 +1680,6 @@ export class BarnScene extends Phaser.Scene {
       });
     });
 
-    // Totals section
     const totalsY = lineY + summary.lines.length * lineHeight + 16;
 
     const baseLine = this.add
@@ -877,11 +1745,34 @@ export class BarnScene extends Phaser.Scene {
       overlay.add(unpaidLine);
     }
 
-    // Penned up animal notification
-    const pennedUpEvents = session.currentNight?.bust ? [session.currentNight.bust.card] : [];
-    if (pennedUpEvents.length > 0) {
-      const pennedCard = pennedUpEvents[0];
-      const pennedDef = getAnimalDef(pennedCard.animalId);
+    // Penned up notifications
+    const pennedUpCardIds = session.pendingPennedUpCardIds;
+    if (pennedUpCardIds.length > 0) {
+      let pennedY = totalMischiefY + 72;
+      for (const cardId of pennedUpCardIds) {
+        const card = session.herd.find((c) => c.id === cardId);
+        if (card) {
+          const pennedDef = getAnimalDef(card.animalId);
+          const lockImg = this.add
+            .image(20, pennedY, TEXTURES.LOCK_ICON)
+            .setOrigin(0)
+            .setScale(0.5);
+          overlay.add(lockImg);
+          const pennedText = this.add
+            .text(44, pennedY, `${pennedDef.name} penned up next night`, {
+              fontFamily: 'monospace',
+              fontSize: '12px',
+              color: '#ffbe4d',
+            })
+            .setOrigin(0);
+          overlay.add(pennedText);
+          pennedY += 20;
+        }
+      }
+    } else if (session.currentNight?.bust) {
+      // Legacy fallback
+      const bustCard = session.currentNight.bust.card;
+      const pennedDef = getAnimalDef(bustCard.animalId);
       const pennedY = totalMischiefY + 72;
       const lockImg = this.add.image(20, pennedY, TEXTURES.LOCK_ICON).setOrigin(0).setScale(0.5);
       overlay.add(lockImg);
@@ -895,7 +1786,6 @@ export class BarnScene extends Phaser.Scene {
       overlay.add(pennedText);
     }
 
-    // Continue button
     const btnW = 280;
     const btnH = 48;
     const btnX = (bounds.w - btnW) / 2;

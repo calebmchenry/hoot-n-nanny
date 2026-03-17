@@ -7,16 +7,32 @@ import {
   createDefaultShopStock,
   getCapacityUpgradeCost,
 } from './shop';
+import {
+  acceptPeek,
+  rejectPeek,
+  executeBoot,
+  executeFetch,
+  resolveManualAbility,
+} from './abilityResolver';
 import type {
+  AnimalId,
   GameSession,
   NightEvent,
   SessionMutation,
   ShopAnimalId,
   NightScoreSummary,
+  WinState,
 } from './types';
 import { GamePhase } from './types';
 
 const DEFAULT_SEED = 'default';
+
+const DEFAULT_WIN_STATE: WinState = {
+  achieved: false,
+  legendaryCount: 0,
+  requiredLegendaryCount: 3,
+  achievedAtNight: null,
+};
 
 const buildNightSeed = (session: GameSession): string => {
   if (session.nightNumber === 1) {
@@ -58,21 +74,37 @@ const finalizeNight = (
 
   const events: NightEvent[] = [{ type: 'night_scored', summary }];
 
+  // Collect penned-up card IDs (array-based)
+  let pendingPennedUpCardIds = [...session.pendingPennedUpCardIds];
+
+  // Legacy singular penned-up tracking
   let pendingPennedUpCardId = session.pendingPennedUpCardId;
   let pendingPennedUpTurns = session.pendingPennedUpTurns;
 
   if (session.currentNight.bust) {
-    pendingPennedUpCardId = session.currentNight.bust.card.id;
+    const bustCardId = session.currentNight.bust.card.id;
+    pendingPennedUpCardIds = [...pendingPennedUpCardIds, bustCardId];
+    pendingPennedUpCardId = bustCardId;
     pendingPennedUpTurns = 1;
     events.push({ type: 'animal_penned_up', card: session.currentNight.bust.card });
   }
 
   const finalizedNight = {
     ...session.currentNight,
-    phase: GamePhase.NightSummary,
+    phase: session.currentNight.wonThisNight ? GamePhase.Win : GamePhase.NightSummary,
     complete: true,
     summary,
   };
+
+  // Update win state
+  const winState: WinState = session.currentNight.wonThisNight
+    ? {
+        achieved: true,
+        legendaryCount: session.currentNight.legendaryCount,
+        requiredLegendaryCount: 3,
+        achievedAtNight: session.currentNight.nightNumber,
+      }
+    : session.winState;
 
   return {
     session: {
@@ -84,6 +116,8 @@ const finalizeNight = (
       lastSummary: summary,
       pendingPennedUpCardId,
       pendingPennedUpTurns,
+      pendingPennedUpCardIds,
+      winState,
     },
     events,
     summary,
@@ -107,16 +141,27 @@ export const createSession = (seed = DEFAULT_SEED): GameSession => {
     pendingPennedUpCardId: null,
     pendingPennedUpTurns: 0,
     lastSummary: null,
+    activePennedUpCardIds: [],
+    pendingPennedUpCardIds: [],
+    winState: DEFAULT_WIN_STATE,
   };
 };
 
 export const startNextNight = (session: GameSession): GameSession => {
+  // Array-based: activePennedUpCardIds = previous night's pendingPennedUpCardIds
+  const activePennedUpCardIds =
+    session.pendingPennedUpCardIds.length > 0
+      ? session.pendingPennedUpCardIds
+      : // Fall back to legacy singular tracking
+        session.pendingPennedUpTurns > 0 && session.pendingPennedUpCardId
+        ? [session.pendingPennedUpCardId]
+        : [];
+
+  // Legacy singular tracking
   const activePennedUpCardId =
     session.pendingPennedUpTurns > 0 ? session.pendingPennedUpCardId : null;
 
-  const deckPool = activePennedUpCardId
-    ? session.herd.filter((card) => card.id !== activePennedUpCardId)
-    : session.herd;
+  const deckPool = session.herd.filter((card) => !activePennedUpCardIds.includes(card.id));
 
   const nightDeck = shuffleDeck(deckPool, buildNightSeed(session));
 
@@ -136,6 +181,8 @@ export const startNextNight = (session: GameSession): GameSession => {
     activePennedUpCardId,
     pendingPennedUpCardId: activePennedUpCardId ? null : session.pendingPennedUpCardId,
     pendingPennedUpTurns: activePennedUpCardId ? 0 : session.pendingPennedUpTurns,
+    activePennedUpCardIds,
+    pendingPennedUpCardIds: [],
   };
 };
 
@@ -152,6 +199,11 @@ export const drawAnimalInSession = (session: GameSession): SessionMutation => {
 
   if (drawResult.state.bust) {
     const finalized = finalizeNight(nextSession, 'bust');
+    nextSession = finalized.session;
+    events = [...events, ...finalized.events];
+  } else if (drawResult.state.wonThisNight) {
+    // Win night scores normally
+    const finalized = finalizeNight(nextSession, 'called');
     nextSession = finalized.session;
     events = [...events, ...finalized.events];
   } else if (drawResult.state.autoScored && drawResult.state.complete) {
@@ -247,6 +299,123 @@ export const upgradeCapacityInSession = (session: GameSession): SessionMutation 
       hay: upgraded.hay,
     },
     events: upgraded.events,
+  };
+};
+
+// Sprint 003: Ability session wrappers
+
+export const acceptPeekInSession = (session: GameSession): SessionMutation => {
+  if (!session.currentNight) {
+    return { session, events: [] };
+  }
+
+  const result = acceptPeek(session.currentNight);
+  let nextSession: GameSession = {
+    ...session,
+    currentNight: result.state,
+  };
+
+  let events = [...result.events];
+
+  if (result.state.bust) {
+    const finalized = finalizeNight(nextSession, 'bust');
+    nextSession = finalized.session;
+    events = [...events, ...finalized.events];
+  } else if (result.state.wonThisNight) {
+    const finalized = finalizeNight(nextSession, 'called');
+    nextSession = finalized.session;
+    events = [...events, ...finalized.events];
+  } else if (result.state.autoScored && result.state.complete) {
+    const finalized = finalizeNight(nextSession, 'deck_exhausted');
+    nextSession = finalized.session;
+    events = [...events, ...finalized.events];
+  }
+
+  return { session: nextSession, events };
+};
+
+export const rejectPeekInSession = (session: GameSession): SessionMutation => {
+  if (!session.currentNight) {
+    return { session, events: [] };
+  }
+
+  const result = rejectPeek(session.currentNight);
+  return {
+    session: { ...session, currentNight: result.state },
+    events: result.events,
+  };
+};
+
+export const executeBootInSession = (
+  session: GameSession,
+  targetCardId: string,
+): SessionMutation => {
+  if (!session.currentNight) {
+    return { session, events: [] };
+  }
+
+  const result = executeBoot(session.currentNight, targetCardId, session.pendingPennedUpCardIds);
+
+  return {
+    session: {
+      ...session,
+      currentNight: result.state,
+      pendingPennedUpCardIds: result.pendingPennedUpCardIds,
+    },
+    events: result.events,
+  };
+};
+
+export const executeFetchInSession = (
+  session: GameSession,
+  selectedAnimalId: AnimalId,
+): SessionMutation => {
+  if (!session.currentNight) {
+    return { session, events: [] };
+  }
+
+  const result = executeFetch(session.currentNight, selectedAnimalId);
+  let nextSession: GameSession = {
+    ...session,
+    currentNight: result.state,
+  };
+
+  let events = [...result.events];
+
+  if (result.state.bust) {
+    const finalized = finalizeNight(nextSession, 'bust');
+    nextSession = finalized.session;
+    events = [...events, ...finalized.events];
+  } else if (result.state.wonThisNight) {
+    const finalized = finalizeNight(nextSession, 'called');
+    nextSession = finalized.session;
+    events = [...events, ...finalized.events];
+  } else if (result.state.autoScored && result.state.complete) {
+    const finalized = finalizeNight(nextSession, 'deck_exhausted');
+    nextSession = finalized.session;
+    events = [...events, ...finalized.events];
+  }
+
+  return { session: nextSession, events };
+};
+
+export const activateManualAbilityInSession = (
+  session: GameSession,
+  sourceCardId: string,
+): SessionMutation => {
+  if (!session.currentNight) {
+    return { session, events: [] };
+  }
+
+  const sourceCard = session.currentNight.barn.find((c) => c.id === sourceCardId);
+  if (!sourceCard) {
+    return { session, events: [] };
+  }
+
+  const result = resolveManualAbility(session.currentNight, sourceCard);
+  return {
+    session: { ...session, currentNight: result.state },
+    events: result.events,
   };
 };
 

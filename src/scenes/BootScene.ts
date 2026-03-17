@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { PALETTE, TEXTURES } from '../config/constants';
+import { LAYOUT, PALETTE, TEXTURES } from '../config/constants';
 import { SceneKey } from '../types';
 
 const maybeGenerateTexture = (
@@ -19,6 +19,9 @@ const maybeGenerateTexture = (
   graphics.destroy();
 };
 
+const CARD_W = LAYOUT.SLOT.WIDTH;
+const CARD_H = LAYOUT.SLOT.HEIGHT;
+
 export class BootScene extends Phaser.Scene {
   constructor() {
     super(SceneKey.Boot);
@@ -29,38 +32,53 @@ export class BootScene extends Phaser.Scene {
   }
 
   create(): void {
-    maybeGenerateTexture(this, TEXTURES.CARD_PARCHMENT, 88, 88, (graphics) => {
+    // --- Card backgrounds ---
+    maybeGenerateTexture(this, TEXTURES.CARD_PARCHMENT, CARD_W, CARD_H, (graphics) => {
       graphics.fillStyle(PALETTE.PARCHMENT, 1);
-      graphics.fillRoundedRect(0, 0, 88, 88, 10);
+      graphics.fillRoundedRect(0, 0, CARD_W, CARD_H, 10);
       graphics.lineStyle(2, PALETTE.PARCHMENT_STROKE, 1);
-      graphics.strokeRoundedRect(1, 1, 86, 86, 10);
+      graphics.strokeRoundedRect(1, 1, CARD_W - 2, CARD_H - 2, 10);
       graphics.fillStyle(0xffffff, 0.12);
-      graphics.fillRect(8, 8, 72, 8);
+      graphics.fillRect(8, 8, CARD_W - 16, 8);
     });
 
-    maybeGenerateTexture(this, TEXTURES.CARD_NOISY, 88, 88, (graphics) => {
+    maybeGenerateTexture(this, TEXTURES.CARD_NOISY, CARD_W, CARD_H, (graphics) => {
       graphics.fillStyle(PALETTE.NOISY_CARD, 1);
-      graphics.fillRoundedRect(0, 0, 88, 88, 10);
+      graphics.fillRoundedRect(0, 0, CARD_W, CARD_H, 10);
       graphics.lineStyle(2, PALETTE.BUST, 1);
-      graphics.strokeRoundedRect(1, 1, 86, 86, 10);
+      graphics.strokeRoundedRect(1, 1, CARD_W - 2, CARD_H - 2, 10);
       graphics.fillStyle(PALETTE.BUST, 0.2);
-      graphics.fillRect(0, 62, 88, 24);
+      graphics.fillRect(0, CARD_H - 26, CARD_W, 24);
     });
 
-    maybeGenerateTexture(this, TEXTURES.SLOT_EMPTY, 88, 88, (graphics) => {
+    // Legendary card background (gold-tinted parchment)
+    maybeGenerateTexture(this, TEXTURES.CARD_LEGENDARY, CARD_W, CARD_H, (graphics) => {
+      graphics.fillStyle(0xf5e6b8, 1);
+      graphics.fillRoundedRect(0, 0, CARD_W, CARD_H, 10);
+      graphics.lineStyle(2, PALETTE.LEGENDARY_BORDER, 1);
+      graphics.strokeRoundedRect(1, 1, CARD_W - 2, CARD_H - 2, 10);
+      graphics.fillStyle(PALETTE.LEGENDARY_GOLD, 0.2);
+      graphics.fillRect(4, 4, CARD_W - 8, CARD_H - 8);
+      graphics.fillStyle(0xffffff, 0.15);
+      graphics.fillRect(8, 8, CARD_W - 16, 8);
+    });
+
+    // --- Slot outlines ---
+    maybeGenerateTexture(this, TEXTURES.SLOT_EMPTY, CARD_W, CARD_H, (graphics) => {
       graphics.fillStyle(0x4f291f, 0.35);
-      graphics.fillRoundedRect(0, 0, 88, 88, 10);
+      graphics.fillRoundedRect(0, 0, CARD_W, CARD_H, 10);
       graphics.lineStyle(2, 0x3a1f1b, 1);
-      graphics.strokeRoundedRect(1, 1, 86, 86, 10);
+      graphics.strokeRoundedRect(1, 1, CARD_W - 2, CARD_H - 2, 10);
     });
 
-    maybeGenerateTexture(this, TEXTURES.SLOT_OCCUPIED, 88, 88, (graphics) => {
+    maybeGenerateTexture(this, TEXTURES.SLOT_OCCUPIED, CARD_W, CARD_H, (graphics) => {
       graphics.fillStyle(PALETTE.SUCCESS, 0.22);
-      graphics.fillRoundedRect(0, 0, 88, 88, 10);
+      graphics.fillRoundedRect(0, 0, CARD_W, CARD_H, 10);
       graphics.lineStyle(2, PALETTE.SUCCESS, 1);
-      graphics.strokeRoundedRect(1, 1, 86, 86, 10);
+      graphics.strokeRoundedRect(1, 1, CARD_W - 2, CARD_H - 2, 10);
     });
 
+    // --- Small resource badges (24px, for shop/old) ---
     maybeGenerateTexture(this, TEXTURES.BADGE_MISCHIEF, 24, 24, (graphics) => {
       graphics.fillStyle(0xd9a441, 1);
       graphics.fillCircle(12, 12, 11);
@@ -75,6 +93,78 @@ export class BootScene extends Phaser.Scene {
       graphics.strokeCircle(12, 12, 11);
     });
 
+    // --- Large resource badges (32px, for barn cards) ---
+    const BD = LAYOUT.BADGE.DIAMETER;
+    const BR = BD / 2;
+    maybeGenerateTexture(this, TEXTURES.BADGE_MISCHIEF_LG, BD, BD, (graphics) => {
+      graphics.fillStyle(0xd9a441, 1);
+      graphics.fillCircle(BR, BR, BR - 1);
+      graphics.lineStyle(2, 0x7a4a13, 1);
+      graphics.strokeCircle(BR, BR, BR - 1);
+    });
+
+    maybeGenerateTexture(this, TEXTURES.BADGE_HAY_LG, BD, BD, (graphics) => {
+      graphics.fillStyle(0x7fb76c, 1);
+      graphics.fillCircle(BR, BR, BR - 1);
+      graphics.lineStyle(2, 0x356b35, 1);
+      graphics.strokeCircle(BR, BR, BR - 1);
+    });
+
+    // --- NOISY! stripe (red diagonal across card top) ---
+    maybeGenerateTexture(this, TEXTURES.BADGE_NOISY_STRIPE, CARD_W, 20, (graphics) => {
+      graphics.fillStyle(PALETTE.BUST, 0.85);
+      graphics.fillRect(0, 0, CARD_W, 20);
+    });
+
+    // --- Ability strip backgrounds (96x14, color-coded) ---
+    maybeGenerateTexture(this, TEXTURES.ABILITY_STRIP_ACTIVE, CARD_W, 14, (graphics) => {
+      graphics.fillStyle(PALETTE.ABILITY_ACTIVE, 0.9);
+      graphics.fillRoundedRect(0, 0, CARD_W, 14, 3);
+    });
+
+    maybeGenerateTexture(this, TEXTURES.ABILITY_STRIP_PASSIVE, CARD_W, 14, (graphics) => {
+      graphics.fillStyle(PALETTE.ABILITY_PASSIVE, 0.9);
+      graphics.fillRoundedRect(0, 0, CARD_W, 14, 3);
+    });
+
+    maybeGenerateTexture(this, TEXTURES.ABILITY_STRIP_TRIGGERED, CARD_W, 14, (graphics) => {
+      graphics.fillStyle(PALETTE.ABILITY_TRIGGERED, 0.9);
+      graphics.fillRoundedRect(0, 0, CARD_W, 14, 3);
+    });
+
+    // --- Star icon (16x16 generated star shape) ---
+    maybeGenerateTexture(this, TEXTURES.BADGE_STAR, 16, 16, (graphics) => {
+      graphics.fillStyle(PALETTE.LEGENDARY_BORDER, 1);
+      // Simple 5-point star
+      const cx = 8;
+      const cy = 8;
+      const outerR = 7;
+      const innerR = 3;
+      const points: { x: number; y: number }[] = [];
+      for (let i = 0; i < 10; i++) {
+        const angle = (Math.PI / 2) * -1 + (Math.PI / 5) * i;
+        const r = i % 2 === 0 ? outerR : innerR;
+        points.push({ x: cx + r * Math.cos(angle), y: cy + r * Math.sin(angle) });
+      }
+      graphics.fillPoints(points, true);
+    });
+
+    // --- Info panel background ---
+    const ipW = LAYOUT.INFO_PANEL.WIDTH;
+    const ipH = LAYOUT.INFO_PANEL.HEIGHT;
+    maybeGenerateTexture(this, TEXTURES.INFO_PANEL_BG, ipW, ipH, (graphics) => {
+      graphics.fillStyle(0x1a1a1a, 0.92);
+      graphics.fillRoundedRect(0, 0, ipW, ipH, { tl: 12, tr: 12, bl: 0, br: 0 });
+      graphics.lineStyle(2, 0x444444, 1);
+      graphics.strokeRoundedRect(1, 1, ipW - 2, ipH - 2, {
+        tl: 12,
+        tr: 12,
+        bl: 0,
+        br: 0,
+      });
+    });
+
+    // --- Noise meter dots ---
     maybeGenerateTexture(this, TEXTURES.NOISE_DOT_EMPTY, 18, 18, (graphics) => {
       graphics.lineStyle(2, 0xf3d7b8, 1);
       graphics.strokeCircle(9, 9, 7);
@@ -87,6 +177,7 @@ export class BootScene extends Phaser.Scene {
       graphics.strokeCircle(9, 9, 7);
     });
 
+    // --- Buttons ---
     maybeGenerateTexture(this, TEXTURES.BUTTON_PRIMARY, 350, 56, (graphics) => {
       graphics.fillStyle(0x2e1f18, 0.5);
       graphics.fillRoundedRect(4, 6, 342, 48, 12);
@@ -114,6 +205,16 @@ export class BootScene extends Phaser.Scene {
       graphics.strokeRoundedRect(1, 1, 348, 48, 12);
     });
 
+    maybeGenerateTexture(this, TEXTURES.BUTTON_DANGER, 350, 56, (graphics) => {
+      graphics.fillStyle(0x2e1818, 0.5);
+      graphics.fillRoundedRect(4, 6, 342, 48, 12);
+      graphics.fillStyle(PALETTE.BUST, 1);
+      graphics.fillRoundedRect(0, 0, 350, 50, 12);
+      graphics.lineStyle(2, 0x6b1e1a, 1);
+      graphics.strokeRoundedRect(1, 1, 348, 48, 12);
+    });
+
+    // --- Environment ---
     maybeGenerateTexture(this, TEXTURES.BARN_PLANK, 390, 844, (graphics) => {
       graphics.fillStyle(PALETTE.SKY_TOP, 1);
       graphics.fillRect(0, 0, 390, 844);

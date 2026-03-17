@@ -4,6 +4,7 @@ import {
   getActionBarPosition,
   getDynamicSlotRects,
   getFarmhouseWindowRect,
+  getInfoPanelBounds,
   getOverlayBounds,
 } from './barnLayout';
 
@@ -74,6 +75,42 @@ describe('barnLayout', () => {
       expect(windowRect.y).toBeGreaterThanOrEqual(0);
       expect(windowRect.x + windowRect.w).toBeLessThanOrEqual(LAYOUT.CANVAS.WIDTH);
       expect(windowRect.y + windowRect.h).toBeLessThanOrEqual(LAYOUT.CANVAS.HEIGHT);
+    }
+  });
+
+  it('96x104 slot rects remain in-bounds for capacities 5-8', () => {
+    for (const capacity of capacities) {
+      const slotRects = getDynamicSlotRects(capacity);
+      for (const slotRect of slotRects) {
+        expect(slotRect.w).toBe(96);
+        expect(slotRect.h).toBe(104);
+        expect(slotRect.x + slotRect.w).toBeLessThanOrEqual(LAYOUT.CANVAS.WIDTH);
+        expect(slotRect.y + slotRect.h).toBeLessThanOrEqual(LAYOUT.CANVAS.HEIGHT);
+      }
+    }
+  });
+
+  it('info panel bounds within canvas and does not overlap action bar', () => {
+    const panel = getInfoPanelBounds();
+    expect(panel.x).toBeGreaterThanOrEqual(0);
+    expect(panel.y).toBeGreaterThanOrEqual(0);
+    expect(panel.x + panel.w).toBeLessThanOrEqual(LAYOUT.CANVAS.WIDTH);
+    expect(panel.y + panel.h).toBeLessThanOrEqual(LAYOUT.CANVAS.HEIGHT);
+
+    // Info panel ends before action bar starts (panel ends at y=736, action bar at y=758)
+    const panelBottom = panel.y + panel.h;
+    expect(panelBottom).toBeLessThanOrEqual(LAYOUT.ACTION_BAR.Y);
+  });
+
+  it('all slots fit within 390x844 canvas for all capacities', () => {
+    for (const capacity of capacities) {
+      const slotRects = getDynamicSlotRects(capacity);
+      for (const slotRect of slotRects) {
+        expect(slotRect.x).toBeGreaterThanOrEqual(0);
+        expect(slotRect.y).toBeGreaterThanOrEqual(0);
+        expect(slotRect.x + slotRect.w).toBeLessThanOrEqual(390);
+        expect(slotRect.y + slotRect.h).toBeLessThanOrEqual(844);
+      }
     }
   });
 });

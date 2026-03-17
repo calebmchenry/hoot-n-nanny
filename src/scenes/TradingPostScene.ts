@@ -2,13 +2,14 @@ import Phaser from 'phaser';
 import { ANIMATION, PALETTE, TEXTURES } from '../config/constants';
 import * as gameStore from '../game/gameStore';
 import { getAnimalDef } from '../game/animals';
+import { ABILITY_REGISTRY } from '../game/abilities';
 import {
   purchaseAnimalInSession,
   upgradeCapacityInSession,
   startNextNight,
   getCapacityUpgradeCost,
 } from '../game/session';
-import { generateMarket } from '../game/shop';
+import { generateMarket, generateLegendaryMarket } from '../game/shop';
 import { SceneKey } from '../types';
 import type { MarketItem, ShopAnimalId } from '../game/types';
 import {
@@ -17,6 +18,7 @@ import {
   getStartNightButtonPosition,
   getCurrencyHeaderPosition,
   getPennedUpPosition,
+  getTabButtonPositions,
 } from './tradingPostLayout';
 
 const TEXT_STYLE_BASE: Phaser.Types.GameObjects.Text.TextStyle = {
@@ -29,6 +31,8 @@ interface ShopCardView {
   item: MarketItem;
 }
 
+type ShopTab = 'animals' | 'legendary';
+
 export class TradingPostScene extends Phaser.Scene {
   private shopCards: ShopCardView[] = [];
   private mischiefText!: Phaser.GameObjects.Text;
@@ -37,18 +41,26 @@ export class TradingPostScene extends Phaser.Scene {
   private capacityButton!: Phaser.GameObjects.Container;
   private capacityBtnBg!: Phaser.GameObjects.Image;
   private capacityBtnText!: Phaser.GameObjects.Text;
+  private activeTab: ShopTab = 'animals';
+  private animalsTabBtn!: Phaser.GameObjects.Container;
+  private legendaryTabBtn!: Phaser.GameObjects.Container;
+  private animalsTabBg!: Phaser.GameObjects.Image;
+  private legendaryTabBg!: Phaser.GameObjects.Image;
 
   constructor() {
     super(SceneKey.TradingPost);
   }
 
   create(): void {
+    this.activeTab = 'animals';
+
     // Background
     this.add.rectangle(195, 422, 390, 844, PALETTE.SHOP_BG).setOrigin(0.5);
 
     this.createHeader();
     this.createCurrencyDisplay();
     this.createPennedUpDisplay();
+    this.createTabs();
     this.createShopGrid();
     this.createCapacityUpgrade();
     this.createStartNightButton();
@@ -79,7 +91,6 @@ export class TradingPostScene extends Phaser.Scene {
     const session = gameStore.getState();
     const pos = getCurrencyHeaderPosition();
 
-    // Mischief badge + value
     this.add.image(pos.x, pos.y + pos.h / 2, TEXTURES.BADGE_MISCHIEF).setOrigin(0, 0.5);
     this.mischiefText = this.add
       .text(pos.x + 30, pos.y + pos.h / 2, String(session.mischief), {
@@ -89,7 +100,6 @@ export class TradingPostScene extends Phaser.Scene {
       })
       .setOrigin(0, 0.5);
 
-    // Hay badge + value
     this.add.image(pos.x + 120, pos.y + pos.h / 2, TEXTURES.BADGE_HAY).setOrigin(0, 0.5);
     this.hayText = this.add
       .text(pos.x + 150, pos.y + pos.h / 2, String(session.hay), {
@@ -110,21 +120,29 @@ export class TradingPostScene extends Phaser.Scene {
     this.pennedUpContainer.removeAll(true);
     const session = gameStore.getState();
 
-    if (!session.activePennedUpCardId) {
-      return;
-    }
+    // Array-based penned-up display
+    const pennedIds =
+      session.activePennedUpCardIds.length > 0
+        ? session.activePennedUpCardIds
+        : session.activePennedUpCardId
+          ? [session.activePennedUpCardId]
+          : [];
 
-    const card = session.herd.find((c) => c.id === session.activePennedUpCardId);
-    if (!card) {
-      return;
-    }
+    if (pennedIds.length === 0) return;
 
-    const def = getAnimalDef(card.animalId);
     const pos = getPennedUpPosition();
+    const names = pennedIds
+      .map((id) => {
+        const card = session.herd.find((c) => c.id === id);
+        return card ? getAnimalDef(card.animalId).name : '';
+      })
+      .filter(Boolean);
+
+    if (names.length === 0) return;
 
     const lockIcon = this.add.image(0, pos.h / 2, TEXTURES.LOCK_ICON).setOrigin(0, 0.5);
     const label = this.add
-      .text(26, pos.h / 2, `Penned: ${def.name}`, {
+      .text(26, pos.h / 2, `Penned: ${names.join(', ')}`, {
         ...TEXT_STYLE_BASE,
         fontSize: '13px',
       })
@@ -133,9 +151,81 @@ export class TradingPostScene extends Phaser.Scene {
     this.pennedUpContainer.add([lockIcon, label]);
   }
 
+  private createTabs(): void {
+    const tabPos = getTabButtonPositions();
+
+    // Animals tab
+    this.animalsTabBtn = this.add.container(tabPos.animals.x, tabPos.animals.y);
+    this.animalsTabBg = this.add
+      .image(0, 0, TEXTURES.BUTTON_PRIMARY)
+      .setOrigin(0)
+      .setDisplaySize(tabPos.animals.w, tabPos.animals.h)
+      .setInteractive();
+    const animalsLabel = this.add
+      .text(tabPos.animals.w / 2, tabPos.animals.h / 2, 'Animals', {
+        ...TEXT_STYLE_BASE,
+        fontSize: '14px',
+        fontStyle: 'bold',
+      })
+      .setOrigin(0.5);
+    this.animalsTabBtn.add([this.animalsTabBg, animalsLabel]);
+    this.animalsTabBg.on('pointerdown', () => this.switchTab('animals'));
+
+    // Legendary tab
+    this.legendaryTabBtn = this.add.container(tabPos.legendary.x, tabPos.legendary.y);
+    this.legendaryTabBg = this.add
+      .image(0, 0, TEXTURES.BUTTON_SECONDARY)
+      .setOrigin(0)
+      .setDisplaySize(tabPos.legendary.w, tabPos.legendary.h)
+      .setInteractive();
+    const legendaryLabel = this.add
+      .text(tabPos.legendary.w / 2, tabPos.legendary.h / 2, 'Legendary', {
+        ...TEXT_STYLE_BASE,
+        fontSize: '14px',
+        fontStyle: 'bold',
+      })
+      .setOrigin(0.5);
+    this.legendaryTabBtn.add([this.legendaryTabBg, legendaryLabel]);
+    this.legendaryTabBg.on('pointerdown', () => this.switchTab('legendary'));
+
+    this.updateTabHighlight();
+  }
+
+  private switchTab(tab: ShopTab): void {
+    this.activeTab = tab;
+    this.updateTabHighlight();
+    this.shopCards.forEach(({ container }) => container.destroy());
+    this.shopCards = [];
+    this.createShopGrid();
+  }
+
+  private updateTabHighlight(): void {
+    const tabPos = getTabButtonPositions();
+    if (this.activeTab === 'animals') {
+      this.animalsTabBg
+        .setTexture(TEXTURES.BUTTON_PRIMARY)
+        .setDisplaySize(tabPos.animals.w, tabPos.animals.h);
+      this.legendaryTabBg
+        .setTexture(TEXTURES.BUTTON_SECONDARY)
+        .setDisplaySize(tabPos.legendary.w, tabPos.legendary.h);
+    } else {
+      this.animalsTabBg
+        .setTexture(TEXTURES.BUTTON_SECONDARY)
+        .setDisplaySize(tabPos.animals.w, tabPos.animals.h);
+      this.legendaryTabBg
+        .setTexture(TEXTURES.BUTTON_PRIMARY)
+        .setDisplaySize(tabPos.legendary.w, tabPos.legendary.h);
+    }
+  }
+
   private createShopGrid(): void {
     const session = gameStore.getState();
-    const market = generateMarket(session.shopStock, session.mischief);
+
+    const market =
+      this.activeTab === 'animals'
+        ? generateMarket(session.shopStock, session.mischief)
+        : generateLegendaryMarket(session.shopStock, session.mischief);
+
     const positions = getShopGridPositions(market.length);
 
     this.shopCards = [];
@@ -143,12 +233,20 @@ export class TradingPostScene extends Phaser.Scene {
     market.forEach((item, index) => {
       const pos = positions[index];
       const container = this.add.container(pos.x, pos.y);
+      const animalDef = getAnimalDef(item.animalId);
+      const ability = ABILITY_REGISTRY[animalDef.abilityKind];
 
       // Card background
-      const cardBg = this.add
-        .image(0, 0, item.noisy ? TEXTURES.CARD_NOISY : TEXTURES.CARD_PARCHMENT)
-        .setOrigin(0)
-        .setDisplaySize(pos.w, pos.h);
+      let bgTexture: string;
+      if (animalDef.tier === 'legendary') {
+        bgTexture = TEXTURES.CARD_LEGENDARY;
+      } else if (item.noisy) {
+        bgTexture = TEXTURES.CARD_NOISY;
+      } else {
+        bgTexture = TEXTURES.CARD_PARCHMENT;
+      }
+
+      const cardBg = this.add.image(0, 0, bgTexture).setOrigin(0).setDisplaySize(pos.w, pos.h);
 
       // Animal sprite
       const sprite = this.add
@@ -180,7 +278,7 @@ export class TradingPostScene extends Phaser.Scene {
         })
         .setOrigin(0, 0.5);
 
-      // Resource values: mischief earned, hay earned
+      // Resource values
       const mischiefLabel = this.add
         .text(pos.w - 8, pos.h - 34, `+${item.mischief}M`, {
           fontFamily: 'monospace',
@@ -206,7 +304,7 @@ export class TradingPostScene extends Phaser.Scene {
         })
         .setOrigin(0.5, 0.5);
 
-      container.add([
+      const children: Phaser.GameObjects.GameObject[] = [
         cardBg,
         sprite,
         nameText,
@@ -215,7 +313,33 @@ export class TradingPostScene extends Phaser.Scene {
         mischiefLabel,
         hayLabel,
         stockText,
-      ]);
+      ];
+
+      // Ability keyword chip on shop cards
+      if (ability.kind !== 'none' && ability.label) {
+        const abilityLabel = this.add
+          .text(pos.w / 2, 76, ability.label, {
+            fontFamily: 'monospace',
+            fontSize: '9px',
+            fontStyle: 'bold',
+            color:
+              ability.trigger === 'on_enter' || ability.trigger === 'manual'
+                ? '#4d8fbf'
+                : ability.trigger === 'passive'
+                  ? '#6aad7e'
+                  : '#c4982a',
+          })
+          .setOrigin(0.5, 0);
+        children.push(abilityLabel);
+      }
+
+      // Legendary star icon
+      if (animalDef.tier === 'legendary') {
+        const star = this.add.image(pos.w - 14, 6, TEXTURES.BADGE_STAR).setOrigin(0.5, 0);
+        children.push(star);
+      }
+
+      container.add(children);
 
       // Affordability / interactivity
       if (item.affordable) {
@@ -238,7 +362,6 @@ export class TradingPostScene extends Phaser.Scene {
     const result = purchaseAnimalInSession(session, animalId);
     gameStore.setState(result.session);
 
-    // Purchase feedback tween
     this.tweens.add({
       targets: container,
       scaleX: 1.08,
@@ -278,12 +401,10 @@ export class TradingPostScene extends Phaser.Scene {
     const pos = getCapacityUpgradePosition();
     const cost = getCapacityUpgradeCost(session.capacity);
 
-    // Remove old interactivity
     this.capacityBtnBg.removeInteractive();
     this.capacityBtnBg.removeAllListeners();
 
     if (cost === null) {
-      // Max capacity reached
       this.capacityBtnBg.setTexture(TEXTURES.BUTTON_DISABLED).setDisplaySize(pos.w, pos.h);
       this.capacityBtnText.setText('Max Capacity');
       this.capacityButton.setAlpha(0.6);
@@ -291,7 +412,7 @@ export class TradingPostScene extends Phaser.Scene {
     }
 
     const canAfford = session.hay >= cost;
-    const label = `Expand Barn (${session.capacity}→${session.capacity + 1}): ${cost} Hay`;
+    const label = `Expand Barn (${session.capacity}\u2192${session.capacity + 1}): ${cost} Hay`;
     this.capacityBtnText.setText(label);
 
     if (canAfford) {
@@ -351,22 +472,17 @@ export class TradingPostScene extends Phaser.Scene {
   private refreshDisplay(): void {
     const session = gameStore.getState();
 
-    // Update currency
     this.mischiefText.setText(String(session.mischief));
     this.hayText.setText(String(session.hay));
 
-    // Refresh penned up
     this.refreshPennedUp();
 
-    // Rebuild shop grid
     this.shopCards.forEach(({ container }) => container.destroy());
     this.shopCards = [];
     this.createShopGrid();
 
-    // Refresh capacity button
     this.refreshCapacityButton();
 
-    // Update DOM attributes
     this.setDomAttributes();
   }
 

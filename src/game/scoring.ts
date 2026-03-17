@@ -1,3 +1,4 @@
+import { ABILITY_REGISTRY } from './abilities';
 import { getAnimalDef } from './animals';
 import type { CardInstance, NightScoreLine, NightScoreSummary } from './types';
 
@@ -44,12 +45,23 @@ export const scoreMischief = (barn: CardInstance[], capacity: number): MischiefS
     const animal = getAnimalDef(card.animalId);
     let lineBonus = 0;
 
+    // Legacy boolean-based dispatch (preserved for backward compat)
     if (animal.givesHermitCrabBonus) {
       lineBonus += emptySlots;
     }
 
     if (animal.givesDraftPonyBonus) {
       lineBonus += barnCatCount;
+    }
+
+    // Sprint 003: abilityKind-based dispatch (produces same results alongside booleans)
+    // Only add bonus from abilityKind if the boolean fields didn't already handle it
+    const ability = ABILITY_REGISTRY[animal.abilityKind];
+    if (ability.kind === 'bonus_per_empty_slot' && !animal.givesHermitCrabBonus) {
+      lineBonus += (ability.params.perSlot ?? 1) * emptySlots;
+    }
+    if (ability.kind === 'bonus_per_barn_cat' && !animal.givesDraftPonyBonus) {
+      lineBonus += (ability.params.perCat ?? 1) * barnCatCount;
     }
 
     baseMischief += animal.mischief;

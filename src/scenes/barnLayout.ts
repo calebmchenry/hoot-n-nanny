@@ -19,24 +19,27 @@ const ROW_MAP: Record<number, number[]> = {
   8: [3, 3, 2],
 };
 
-const getCapacityOffset = (capacity: number): number => {
-  if (capacity <= 6) {
-    return 0;
-  }
+// Fixed x positions per row count (from sprint spec)
+const ROW_X_3 = [39, 147, 255];
+const ROW_X_2 = [93, 201];
+const ROW_X_1 = [147];
 
-  return (capacity - 6) * 12;
-};
-
-const centeredRowX = (count: number): number[] => {
-  const totalWidth = count * LAYOUT.SLOT.WIDTH + (count - 1) * LAYOUT.SLOT.GAP;
-  const startX = Math.round((LAYOUT.CANVAS.WIDTH - totalWidth) / 2);
-
-  return Array.from({ length: count }).map((_, index) => {
-    return startX + index * (LAYOUT.SLOT.WIDTH + LAYOUT.SLOT.GAP);
-  });
-};
+const ROW_Y = [156, 274, 392];
 
 const toRect = (x: number, y: number, w: number, h: number): Rect => ({ x, y, w, h });
+
+const getXPositions = (count: number): number[] => {
+  switch (count) {
+    case 3:
+      return ROW_X_3;
+    case 2:
+      return ROW_X_2;
+    case 1:
+      return ROW_X_1;
+    default:
+      return [];
+  }
+};
 
 export const getDynamicSlotRects = (capacity: number): Rect[] => {
   const rows = ROW_MAP[capacity];
@@ -47,12 +50,10 @@ export const getDynamicSlotRects = (capacity: number): Rect[] => {
   const slotRects: Rect[] = [];
 
   rows.forEach((count, rowIndex) => {
-    const y =
-      LAYOUT.SLOT.START_Y +
-      rowIndex * (LAYOUT.SLOT.HEIGHT + LAYOUT.SLOT.ROW_GAP) +
-      getCapacityOffset(capacity);
+    const y = ROW_Y[rowIndex];
+    const xPositions = getXPositions(count);
 
-    centeredRowX(count).forEach((x) => {
+    xPositions.forEach((x) => {
       slotRects.push(toRect(x, y, LAYOUT.SLOT.WIDTH, LAYOUT.SLOT.HEIGHT));
     });
   });
@@ -60,51 +61,43 @@ export const getDynamicSlotRects = (capacity: number): Rect[] => {
   return slotRects.slice(0, capacity);
 };
 
-export const getResourceBannerPosition = (capacity: number): Rect => {
-  return toRect(20, 20 + Math.floor(getCapacityOffset(capacity) / 2), 240, 42);
+export const getResourceBannerPosition = (_capacity: number): Rect => {
+  return toRect(16, 16, 358, 64);
 };
 
-export const getNoiseMeterPosition = (capacity: number): Rect => {
-  return toRect(20, 74 + Math.floor(getCapacityOffset(capacity) / 2), 148, 24);
+export const getNoiseMeterPosition = (_capacity: number): Rect => {
+  return toRect(16, 86, 170, 28);
 };
 
-export const getDeckStackPosition = (capacity: number): Rect => {
-  return toRect(304, 108 + Math.floor(getCapacityOffset(capacity) / 2), 64, 82);
+export const getDeckStackPosition = (_capacity: number): Rect => {
+  return toRect(306, 106, 64, 82);
 };
 
-export const getFarmhouseRect = (capacity: number): Rect => {
-  const offset = getCapacityOffset(capacity);
+export const getFarmhouseRect = (_capacity: number): Rect => {
   return toRect(
     LAYOUT.FARMHOUSE.X,
-    LAYOUT.FARMHOUSE.Y + offset,
+    LAYOUT.FARMHOUSE.Y,
     LAYOUT.FARMHOUSE.WIDTH,
     LAYOUT.FARMHOUSE.HEIGHT,
   );
 };
 
 export const getActionBarPosition = (capacity: number, dualButtons: boolean): ActionBarLayout => {
-  const offset = getCapacityOffset(capacity);
-  const y = LAYOUT.ACTION_BAR.Y + offset;
+  const y = LAYOUT.ACTION_BAR.Y;
 
   if (!dualButtons) {
     return {
-      primary: toRect(
-        Math.round((LAYOUT.CANVAS.WIDTH - LAYOUT.ACTION_BAR.WIDTH) / 2),
-        y,
-        LAYOUT.ACTION_BAR.WIDTH,
-        LAYOUT.ACTION_BAR.HEIGHT,
-      ),
+      primary: toRect(LAYOUT.ACTION_BAR.X, y, LAYOUT.ACTION_BAR.WIDTH, LAYOUT.ACTION_BAR.HEIGHT),
       secondary: null,
     };
   }
 
   const buttonWidth = Math.round((LAYOUT.ACTION_BAR.WIDTH - LAYOUT.ACTION_BAR.GAP) / 2);
-  const leftX = Math.round((LAYOUT.CANVAS.WIDTH - LAYOUT.ACTION_BAR.WIDTH) / 2);
 
   return {
-    primary: toRect(leftX, y, buttonWidth, LAYOUT.ACTION_BAR.HEIGHT),
+    primary: toRect(LAYOUT.ACTION_BAR.X, y, buttonWidth, LAYOUT.ACTION_BAR.HEIGHT),
     secondary: toRect(
-      leftX + buttonWidth + LAYOUT.ACTION_BAR.GAP,
+      LAYOUT.ACTION_BAR.X + buttonWidth + LAYOUT.ACTION_BAR.GAP,
       y,
       buttonWidth,
       LAYOUT.ACTION_BAR.HEIGHT,
@@ -112,14 +105,8 @@ export const getActionBarPosition = (capacity: number, dualButtons: boolean): Ac
   };
 };
 
-export const getOverlayBounds = (capacity: number): Rect => {
-  const offset = getCapacityOffset(capacity);
-  return toRect(
-    LAYOUT.SUMMARY.X,
-    LAYOUT.SUMMARY.Y + Math.floor(offset / 2),
-    LAYOUT.SUMMARY.WIDTH,
-    LAYOUT.SUMMARY.HEIGHT,
-  );
+export const getOverlayBounds = (_capacity: number): Rect => {
+  return toRect(LAYOUT.SUMMARY.X, LAYOUT.SUMMARY.Y, LAYOUT.SUMMARY.WIDTH, LAYOUT.SUMMARY.HEIGHT);
 };
 
 export const getFarmhouseWindowRect = (capacity: number): Rect => {
@@ -129,5 +116,14 @@ export const getFarmhouseWindowRect = (capacity: number): Rect => {
     houseRect.y + LAYOUT.FARMHOUSE.WINDOW.OFFSET_Y,
     LAYOUT.FARMHOUSE.WINDOW.WIDTH,
     LAYOUT.FARMHOUSE.WINDOW.HEIGHT,
+  );
+};
+
+export const getInfoPanelBounds = (): Rect => {
+  return toRect(
+    LAYOUT.INFO_PANEL.X,
+    LAYOUT.INFO_PANEL.Y,
+    LAYOUT.INFO_PANEL.WIDTH,
+    LAYOUT.INFO_PANEL.HEIGHT,
   );
 };

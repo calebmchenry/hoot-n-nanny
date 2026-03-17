@@ -1,8 +1,9 @@
-import { getAnimalDef, SHOP_ANIMAL_IDS } from './animals';
+import { getAnimalDef, SHOP_ANIMAL_IDS, LEGENDARY_ANIMAL_IDS } from './animals';
 import { createCardInstance } from './deck';
 import type { CardInstance, MarketItem, NightEvent, ShopAnimalId, ShopStock } from './types';
 
 export const SHOP_STOCK_PER_ANIMAL = 3;
+export const LEGENDARY_STOCK_PER_ANIMAL = 1;
 const MAX_CAPACITY = 8;
 
 const CAPACITY_COST_BY_CURRENT: Partial<Record<number, number>> = {
@@ -12,35 +13,43 @@ const CAPACITY_COST_BY_CURRENT: Partial<Record<number, number>> = {
 };
 
 export const createDefaultShopStock = (): ShopStock => {
+  const stock = {} as ShopStock;
+  for (const id of SHOP_ANIMAL_IDS) {
+    stock[id] = SHOP_STOCK_PER_ANIMAL;
+  }
+  for (const id of LEGENDARY_ANIMAL_IDS) {
+    stock[id] = LEGENDARY_STOCK_PER_ANIMAL;
+  }
+  return stock;
+};
+
+const buildMarketItem = (
+  animalId: ShopAnimalId,
+  shopStock: ShopStock,
+  mischief: number,
+): MarketItem => {
+  const definition = getAnimalDef(animalId);
+  const remainingStock = shopStock[animalId];
+  const costMischief = definition.costMischief ?? 0;
+
   return {
-    Bunny: SHOP_STOCK_PER_ANIMAL,
-    Hen: SHOP_STOCK_PER_ANIMAL,
-    WildBoar: SHOP_STOCK_PER_ANIMAL,
-    HermitCrab: SHOP_STOCK_PER_ANIMAL,
-    DraftPony: SHOP_STOCK_PER_ANIMAL,
-    StruttingPeacock: SHOP_STOCK_PER_ANIMAL,
-    MilkmaidGoat: SHOP_STOCK_PER_ANIMAL,
-    HoneyBee: SHOP_STOCK_PER_ANIMAL,
+    animalId,
+    name: definition.name,
+    costMischief,
+    mischief: definition.mischief,
+    hay: definition.hay,
+    noisy: definition.noisy,
+    remainingStock,
+    affordable: remainingStock > 0 && mischief >= costMischief,
   };
 };
 
 export const generateMarket = (shopStock: ShopStock, mischief: number): MarketItem[] => {
-  return SHOP_ANIMAL_IDS.map((animalId) => {
-    const definition = getAnimalDef(animalId);
-    const remainingStock = shopStock[animalId];
-    const costMischief = definition.costMischief ?? 0;
+  return SHOP_ANIMAL_IDS.map((animalId) => buildMarketItem(animalId, shopStock, mischief));
+};
 
-    return {
-      animalId,
-      name: definition.name,
-      costMischief,
-      mischief: definition.mischief,
-      hay: definition.hay,
-      noisy: definition.noisy,
-      remainingStock,
-      affordable: remainingStock > 0 && mischief >= costMischief,
-    };
-  });
+export const generateLegendaryMarket = (shopStock: ShopStock, mischief: number): MarketItem[] => {
+  return LEGENDARY_ANIMAL_IDS.map((animalId) => buildMarketItem(animalId, shopStock, mischief));
 };
 
 export const purchaseAnimal = (options: {

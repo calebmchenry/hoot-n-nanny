@@ -30,6 +30,7 @@ export const createCardInstance = (animalId: AnimalId, serial: number): CardInst
   return {
     id: `card-${serial.toString().padStart(4, '0')}-${animalId}`,
     animalId,
+    abilityUsed: false,
   };
 };
 

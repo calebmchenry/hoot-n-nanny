@@ -3,6 +3,7 @@ import { createCardInstance } from './deck';
 import {
   createDefaultShopStock,
   generateMarket,
+  generateLegendaryMarket,
   getCapacityUpgradeCost,
   purchaseAnimal,
   upgradeCapacity,
@@ -113,5 +114,58 @@ describe('shop', () => {
 
     expect(outOfStock.ok).toBe(false);
     expect(outOfStock.reason).toBe('out_of_stock');
+  });
+
+  // Sprint 003 tests
+
+  it('Legendary items in market with correct costs', () => {
+    const stock = createDefaultShopStock();
+    const market = generateLegendaryMarket(stock, 100);
+
+    const costs = market.map((item) => item.costMischief);
+    expect(costs).toEqual([30, 35, 40, 45, 45, 50, 50, 55]);
+  });
+
+  it('Legendary stock = 1 per animal', () => {
+    const stock = createDefaultShopStock();
+    const market = generateLegendaryMarket(stock, 100);
+
+    for (const item of market) {
+      expect(item.remainingStock).toBe(1);
+    }
+  });
+
+  it('Purchasing a Legendary reduces stock to 0, item no longer available', () => {
+    let stock = createDefaultShopStock();
+    const result = purchaseAnimal({
+      animalId: 'GoldenGoose',
+      shopStock: stock,
+      mischief: 100,
+      herd: [],
+      nextCardSerial: 1,
+    });
+
+    expect(result.ok).toBe(true);
+    stock = result.shopStock;
+    expect(stock.GoldenGoose).toBe(0);
+
+    const secondTry = purchaseAnimal({
+      animalId: 'GoldenGoose',
+      shopStock: stock,
+      mischief: 100,
+      herd: result.herd,
+      nextCardSerial: result.nextCardSerial,
+    });
+
+    expect(secondTry.ok).toBe(false);
+    expect(secondTry.reason).toBe('out_of_stock');
+  });
+
+  it('Active-ability animals appear with stock = 3', () => {
+    const stock = createDefaultShopStock();
+    expect(stock.Sheepdog).toBe(3);
+    expect(stock.StableHand).toBe(3);
+    expect(stock.BorderCollie).toBe(3);
+    expect(stock.CheerfulLamb).toBe(3);
   });
 });
