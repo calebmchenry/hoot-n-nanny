@@ -50,7 +50,7 @@ export const getShopGridPositions = (itemCount: number, cw: number, ch: number):
     return [];
   }
 
-  const columns = cw >= 500 ? 3 : 2;
+  const columns = 2;
   const rows = Math.ceil(itemCount / columns);
 
   const marginX = getHorizontalMargin(cw);
@@ -61,17 +61,17 @@ export const getShopGridPositions = (itemCount: number, cw: number, ch: number):
   const capacityRect = getCapacityUpgradePosition(cw, ch);
 
   const gridTop = tabRect.y + tabRect.h + Math.max(8, round((10 / REF_H) * ch));
-  const gridBottom = capacityRect.y - Math.max(10, round((14 / REF_H) * ch));
+  const gridBottom = capacityRect.y - Math.max(8, round((8 / REF_H) * ch));
 
   const availableW = cw - marginX * 2;
   const cardW = Math.max(44, Math.floor((availableW - gapX * (columns - 1)) / columns));
 
-  const minNeededH = rows * 44 + (rows - 1) * gapY;
+  const minNeededH = rows * 80 + (rows - 1) * gapY;
   const boundedBottom = Math.max(gridBottom, gridTop + minNeededH);
   const availableH = boundedBottom - gridTop;
   const fitCardH = Math.floor((availableH - gapY * (rows - 1)) / rows);
-  const ratioCardH = round(cardW * (108 / 170));
-  const cardH = clamp(Math.min(ratioCardH, fitCardH), 44, 160);
+  const ratioCardH = round(cardW * (130 / 170));
+  const cardH = clamp(Math.min(ratioCardH, fitCardH), 80, 200);
 
   const usedHeight = rows * cardH + (rows - 1) * gapY;
   const startY = gridTop + Math.max(0, Math.floor((availableH - usedHeight) / 2));

@@ -36,9 +36,11 @@ import type {
   AnimalId,
 } from '../game/types';
 import { GamePhase } from '../game/types';
+import { showAbilityTooltip, hideAbilityTooltip as dismissAbilityTooltip } from './tooltipHelper';
 
 const TEXT_DARK_TINT = 0x241611;
 const TEXT_LIGHT_TINT = 0xf8f3e5;
+const TOOLTIP_HOVER_DELAY_MS = 150;
 
 const TEXT_STYLE_LIGHT: Phaser.Types.GameObjects.Text.TextStyle = {
   fontFamily: 'sans-serif',
@@ -55,6 +57,8 @@ const setDomAttr = (attr: string, value: string): void => {
 export class BarnScene extends Phaser.Scene {
   // Viewport
   private pendingResize: { cw: number; ch: number } | null = null;
+  private cw: number = LAYOUT.CANVAS.REF_WIDTH;
+  private ch: number = LAYOUT.CANVAS.REF_HEIGHT;
 
   // Environment
   private skyBand!: Phaser.GameObjects.Image;
@@ -119,16 +123,21 @@ export class BarnScene extends Phaser.Scene {
   // Long-press
   private longPressTimer: Phaser.Time.TimerEvent | null = null;
   private longPressStartPos: { x: number; y: number } | null = null;
+  private tooltipDelayTimer: Phaser.Time.TimerEvent | null = null;
+  private abilityTooltip: Phaser.GameObjects.Container | null = null;
+  private tooltipCardId: string | null = null;
 
   constructor() {
     super(SceneKey.Barn);
   }
 
+  private setCanvasSize(cw: number, ch: number): void {
+    this.cw = cw;
+    this.ch = ch;
+  }
+
   private getCanvasSize(): { cw: number; ch: number } {
-    return {
-      cw: Math.round(this.scale.width),
-      ch: Math.round(this.scale.height),
-    };
+    return { cw: this.cw, ch: this.ch };
   }
 
   private fontPx(base: number, ch: number): number {
@@ -216,10 +225,15 @@ export class BarnScene extends Phaser.Scene {
     this.actionBarVisible = true;
     this.pendingResize = null;
     this.infoPanelDismissArea = null;
+    this.tooltipDelayTimer = null;
+    this.abilityTooltip = null;
+    this.tooltipCardId = null;
 
     const state = gameStore.getState();
     const capacity = state.capacity;
-    const { cw, ch } = this.getCanvasSize();
+    const cw = Math.round(this.scale.width);
+    const ch = Math.round(this.scale.height);
+    this.setCanvasSize(cw, ch);
 
     // Set DOM attributes
     setDomAttr('data-scene', 'Barn');
@@ -479,9 +493,11 @@ export class BarnScene extends Phaser.Scene {
       this.showNightSummaryOverlay(night.summary, state);
     }
 
+    this.input.on('pointerdown', this.handleGlobalPointerDown, this);
     this.scale.on('resize', this.handleResize, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.shutdown, this);
-    this.applyLayout(cw, ch);
+    this.applyViewportLayout(cw, ch);
+    this.applyContentLayout(cw, ch);
     this.cameras.main.fadeIn(ANIMATION.SCENE_FADE_MS, 0, 0, 0);
 
     // Signal game ready
@@ -659,6 +675,101 @@ export class BarnScene extends Phaser.Scene {
     button.on('pointerout', release);
   }
 
+  private isTouchPointer(pointer: Phaser.Input.Pointer): boolean {
+    const sourceEvent = pointer.event;
+    return (
+      pointer.wasTouch ||
+      (sourceEvent instanceof PointerEvent &&
+        (sourceEvent.pointerType === 'touch' || sourceEvent.pointerType === 'pen'))
+    );
+  }
+
+  private clearTooltipDelay(): void {
+    this.tooltipDelayTimer?.destroy();
+    this.tooltipDelayTimer = null;
+  }
+
+  private hideBarnTooltip(): void {
+    this.clearTooltipDelay();
+    if (!this.abilityTooltip) {
+      this.tooltipCardId = null;
+      return;
+    }
+
+    const tooltip = this.abilityTooltip;
+    this.abilityTooltip = null;
+    this.tooltipCardId = null;
+    dismissAbilityTooltip(this, tooltip);
+  }
+
+  private isPointerOverBarnCard(currentlyOver: Phaser.GameObjects.GameObject[]): boolean {
+    return currentlyOver.some((entry) => entry.getData('barn-card-hit-area') === true);
+  }
+
+  private getCardTooltipAnchor(container: Phaser.GameObjects.Container): { x: number; y: number } {
+    const bounds = container.getBounds();
+    return { x: bounds.centerX, y: bounds.top };
+  }
+
+  private showCardTooltip(card: CardInstance, container: Phaser.GameObjects.Container): boolean {
+    if (this.infoPanelOverlay) {
+      return false;
+    }
+
+    const animalDef = getAnimalDef(card.animalId);
+    const ability = ABILITY_REGISTRY[animalDef.abilityKind];
+    if (ability.kind === 'none') {
+      this.hideBarnTooltip();
+      return false;
+    }
+
+    if (this.tooltipCardId === card.id && this.abilityTooltip?.active) {
+      return true;
+    }
+
+    const { x, y } = this.getCardTooltipAnchor(container);
+    this.hideBarnTooltip();
+    this.abilityTooltip = showAbilityTooltip(this, x, y, animalDef, ability, this.cw, this.ch);
+    this.tooltipCardId = card.id;
+    return true;
+  }
+
+  private scheduleDesktopCardTooltip(
+    card: CardInstance,
+    container: Phaser.GameObjects.Container,
+  ): void {
+    this.clearTooltipDelay();
+    this.tooltipDelayTimer = this.time.delayedCall(TOOLTIP_HOVER_DELAY_MS, () => {
+      this.showCardTooltip(card, container);
+    });
+  }
+
+  private handleMobileCardTap(card: CardInstance, container: Phaser.GameObjects.Container): void {
+    const isSecondTap = this.tooltipCardId === card.id;
+    const didShowTooltip = this.showCardTooltip(card, container);
+    if (!didShowTooltip) {
+      this.tooltipCardId = null;
+    }
+
+    if (isSecondTap) {
+      this.hideBarnTooltip();
+      this.onCardTap(card);
+    }
+  }
+
+  private handleGlobalPointerDown(
+    pointer: Phaser.Input.Pointer,
+    currentlyOver: Phaser.GameObjects.GameObject[] = [],
+  ): void {
+    if (!this.isTouchPointer(pointer)) {
+      return;
+    }
+    if (this.isPointerOverBarnCard(currentlyOver)) {
+      return;
+    }
+    this.hideBarnTooltip();
+  }
+
   private disableButtons(): void {
     this.primaryButton.removeInteractive();
     this.primaryButton.setAlpha(0.6);
@@ -732,17 +843,12 @@ export class BarnScene extends Phaser.Scene {
     }
   }
 
-  private applyLayout(cw: number, ch: number): void {
+  private applyViewportLayout(cw: number, ch: number): void {
     const state = gameStore.getState();
     const capacity = state.capacity;
-    const slotRects = getDynamicSlotRects(capacity, cw, ch);
-    const farmhouseRect = getFarmhouseRect(capacity, cw, ch);
-    const windowRect = getFarmhouseWindowRect(capacity, cw, ch);
     const deckRect = getDeckStackPosition(capacity, cw, ch);
     const bannerRect = getResourceBannerPosition(capacity, cw, ch);
     const noiseRect = getNoiseMeterPosition(capacity, cw, ch);
-    const overlayBounds = getOverlayBounds(capacity, cw, ch);
-    const infoPanelBounds = getInfoPanelBounds(cw, ch);
 
     const skyHeight = Math.max(72, Math.round((88 / LAYOUT.CANVAS.REF_HEIGHT) * ch));
     this.skyBand.setPosition(0, 0).setDisplaySize(cw, skyHeight);
@@ -762,18 +868,6 @@ export class BarnScene extends Phaser.Scene {
     this.floorStraw.setPosition(0, floorTop).setSize(cw, floorHeight);
     this.vignette.setPosition(cw / 2, ch / 2).setDisplaySize(cw, ch);
 
-    this.farmhouseImage
-      .setPosition(farmhouseRect.x, farmhouseRect.y)
-      .setDisplaySize(farmhouseRect.w, farmhouseRect.h);
-    this.farmhouseShadow
-      .setPosition(
-        farmhouseRect.x + farmhouseRect.w * 0.56,
-        farmhouseRect.y + farmhouseRect.h * 0.94,
-      )
-      .setSize(farmhouseRect.w * 0.92, farmhouseRect.h * 0.22);
-    this.windowGlow
-      .setPosition(windowRect.x, windowRect.y)
-      .setDisplaySize(windowRect.w, windowRect.h);
     this.deckStack.setPosition(deckRect.x, deckRect.y).setDisplaySize(deckRect.w, deckRect.h);
     this.deckShadow
       .setPosition(deckRect.x + deckRect.w * 0.5, deckRect.y + deckRect.h * 0.88)
@@ -793,46 +887,6 @@ export class BarnScene extends Phaser.Scene {
       yoyo: true,
       repeat: -1,
       ease: 'Sine.easeInOut',
-    });
-
-    this.slotImages.forEach((slotImage, index) => {
-      const slot = slotRects[index];
-      if (!slot) {
-        slotImage.setVisible(false);
-        return;
-      }
-      slotImage.setVisible(true).setPosition(slot.x, slot.y).setDisplaySize(slot.w, slot.h);
-    });
-
-    this.cardContainers.forEach((container, index) => {
-      const slot = slotRects[index];
-      if (!slot) {
-        return;
-      }
-
-      const baseW = Number(container.getData('slotW')) || LAYOUT.SLOT.WIDTH;
-      const baseH = Number(container.getData('slotH')) || LAYOUT.SLOT.HEIGHT;
-      container.setPosition(slot.x, slot.y);
-      container.setScale(slot.w / baseW, slot.h / baseH);
-    });
-
-    this.cardShadows.forEach((shadow, index) => {
-      const slot = slotRects[index];
-      if (!slot) {
-        shadow.setVisible(false);
-        return;
-      }
-      shadow
-        .setVisible(true)
-        .setPosition(slot.x + Math.round(slot.w * 0.03), slot.y + Math.round(slot.h * 0.04))
-        .setDisplaySize(slot.w, slot.h);
-
-      const shimmer = this.cardContainers[index]?.getData('shimmerEmitter') as
-        | Phaser.GameObjects.Particles.ParticleEmitter
-        | undefined;
-      if (shimmer) {
-        shimmer.setPosition(slot.x + slot.w / 2, slot.y + slot.h / 2);
-      }
     });
 
     const labelOffsetX = Math.round((120 / LAYOUT.CANVAS.REF_WIDTH) * cw);
@@ -887,6 +941,69 @@ export class BarnScene extends Phaser.Scene {
     if (!this.actionBarVisible) {
       this.hideActionBar();
     }
+  }
+
+  private applyContentLayout(cw: number = this.cw, ch: number = this.ch): void {
+    const state = gameStore.getState();
+    const capacity = state.capacity;
+    const slotRects = getDynamicSlotRects(capacity, cw, ch);
+    const farmhouseRect = getFarmhouseRect(capacity, cw, ch);
+    const windowRect = getFarmhouseWindowRect(capacity, cw, ch);
+    const overlayBounds = getOverlayBounds(capacity, cw, ch);
+    const infoPanelBounds = getInfoPanelBounds(cw, ch);
+
+    this.farmhouseImage
+      .setPosition(farmhouseRect.x, farmhouseRect.y)
+      .setDisplaySize(farmhouseRect.w, farmhouseRect.h);
+    this.farmhouseShadow
+      .setPosition(
+        farmhouseRect.x + farmhouseRect.w * 0.56,
+        farmhouseRect.y + farmhouseRect.h * 0.94,
+      )
+      .setSize(farmhouseRect.w * 0.92, farmhouseRect.h * 0.22);
+    this.windowGlow
+      .setPosition(windowRect.x, windowRect.y)
+      .setDisplaySize(windowRect.w, windowRect.h);
+
+    this.slotImages.forEach((slotImage, index) => {
+      const slot = slotRects[index];
+      if (!slot) {
+        slotImage.setVisible(false);
+        return;
+      }
+      slotImage.setVisible(true).setPosition(slot.x, slot.y).setDisplaySize(slot.w, slot.h);
+    });
+
+    this.cardContainers.forEach((container, index) => {
+      const slot = slotRects[index];
+      if (!slot) {
+        return;
+      }
+
+      const baseW = Number(container.getData('slotW')) || LAYOUT.SLOT.WIDTH;
+      const baseH = Number(container.getData('slotH')) || LAYOUT.SLOT.HEIGHT;
+      container.setPosition(slot.x, slot.y);
+      container.setScale(slot.w / baseW, slot.h / baseH);
+    });
+
+    this.cardShadows.forEach((shadow, index) => {
+      const slot = slotRects[index];
+      if (!slot) {
+        shadow.setVisible(false);
+        return;
+      }
+      shadow
+        .setVisible(true)
+        .setPosition(slot.x + Math.round(slot.w * 0.03), slot.y + Math.round(slot.h * 0.04))
+        .setDisplaySize(slot.w, slot.h);
+
+      const shimmer = this.cardContainers[index]?.getData('shimmerEmitter') as
+        | Phaser.GameObjects.Particles.ParticleEmitter
+        | undefined;
+      if (shimmer) {
+        shimmer.setPosition(slot.x + slot.w / 2, slot.y + slot.h / 2);
+      }
+    });
 
     if (this.infoPanelOverlay) {
       this.resizeOverlayContainer(this.infoPanelOverlay, infoPanelBounds);
@@ -917,13 +1034,16 @@ export class BarnScene extends Phaser.Scene {
   private handleResize(gameSize: Phaser.Structs.Size): void {
     const cw = Math.round(gameSize.width);
     const ch = Math.round(gameSize.height);
+    this.setCanvasSize(cw, ch);
 
     if (this.isAnimating) {
       this.pendingResize = { cw, ch };
       return;
     }
 
-    this.applyLayout(cw, ch);
+    this.hideBarnTooltip();
+    this.applyViewportLayout(cw, ch);
+    this.applyContentLayout(cw, ch);
   }
 
   private flushPendingResize(): void {
@@ -933,14 +1053,23 @@ export class BarnScene extends Phaser.Scene {
 
     const { cw, ch } = this.pendingResize;
     this.pendingResize = null;
-    this.applyLayout(cw, ch);
+    this.setCanvasSize(cw, ch);
+    this.hideBarnTooltip();
+    this.applyViewportLayout(cw, ch);
+    this.applyContentLayout(cw, ch);
   }
 
   private shutdown(): void {
+    this.input.off('pointerdown', this.handleGlobalPointerDown, this);
     this.scale.off('resize', this.handleResize, this);
     this.pendingResize = null;
     this.longPressTimer?.destroy();
     this.longPressTimer = null;
+    this.longPressStartPos = null;
+    this.clearTooltipDelay();
+    this.abilityTooltip?.destroy();
+    this.abilityTooltip = null;
+    this.tooltipCardId = null;
 
     this.windowGlowTween?.remove();
     this.windowGlowTween = null;
@@ -965,6 +1094,7 @@ export class BarnScene extends Phaser.Scene {
   private onDrawAnimal(): void {
     if (this.isAnimating) return;
 
+    this.hideBarnTooltip();
     const session = gameStore.getState();
     const result = drawAnimalInSession(session);
     gameStore.setState(result.session);
@@ -981,6 +1111,7 @@ export class BarnScene extends Phaser.Scene {
   private onCallItANight(): void {
     if (this.isAnimating) return;
 
+    this.hideBarnTooltip();
     const session = gameStore.getState();
     const result = callItANightInSession(session);
     gameStore.setState(result.session);
@@ -1110,6 +1241,7 @@ export class BarnScene extends Phaser.Scene {
         }
       }
 
+      this.applyContentLayout();
       this.flushPendingResize();
     });
   }
@@ -1333,11 +1465,29 @@ export class BarnScene extends Phaser.Scene {
       .setOrigin(0)
       .setAlpha(0.001)
       .setInteractive();
+    hitArea.setData('barn-card-hit-area', true);
     container.add(hitArea);
 
+    hitArea.on('pointerover', (pointer: Phaser.Input.Pointer) => {
+      if (this.isTouchPointer(pointer)) {
+        return;
+      }
+      this.scheduleDesktopCardTooltip(card, container);
+    });
+
+    hitArea.on('pointerout', () => {
+      this.clearTooltipDelay();
+      if (this.tooltipCardId === card.id) {
+        this.hideBarnTooltip();
+      }
+    });
+
     hitArea.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+      this.clearTooltipDelay();
       this.longPressStartPos = { x: pointer.x, y: pointer.y };
       this.longPressTimer = this.time.delayedCall(ANIMATION.LONG_PRESS_MS, () => {
+        this.longPressTimer = null;
+        this.hideBarnTooltip();
         this.showInfoPanel(card);
       });
     });
@@ -1353,13 +1503,23 @@ export class BarnScene extends Phaser.Scene {
       }
     });
 
-    hitArea.on('pointerup', () => {
+    hitArea.on('pointerup', (pointer: Phaser.Input.Pointer) => {
       if (this.longPressTimer) {
         this.longPressTimer.destroy();
         this.longPressTimer = null;
-        // This was a short tap, check for manual ability
-        this.onCardTap(card);
+        if (this.isTouchPointer(pointer)) {
+          this.handleMobileCardTap(card, container);
+        } else {
+          this.onCardTap(card);
+        }
       }
+      this.longPressStartPos = null;
+    });
+
+    hitArea.on('pointerupoutside', () => {
+      this.longPressTimer?.destroy();
+      this.longPressTimer = null;
+      this.longPressStartPos = null;
     });
 
     if (animated) {
@@ -1379,6 +1539,7 @@ export class BarnScene extends Phaser.Scene {
     if (this.isAnimating) return;
     if (this.infoPanelOverlay) return;
 
+    this.hideBarnTooltip();
     const session = gameStore.getState();
     const night = session.currentNight;
     if (!night || night.complete) return;
@@ -1403,6 +1564,7 @@ export class BarnScene extends Phaser.Scene {
   private showInfoPanel(card: CardInstance): void {
     if (this.infoPanelOverlay) return;
 
+    this.hideBarnTooltip();
     const { cw, ch } = this.getCanvasSize();
     const bounds = getInfoPanelBounds(cw, ch);
     const animalDef = getAnimalDef(card.animalId);
@@ -1560,6 +1722,7 @@ export class BarnScene extends Phaser.Scene {
     const night = session.currentNight;
     if (!night?.pendingDecision || night.pendingDecision.kind !== 'peek') return;
 
+    this.hideBarnTooltip();
     const { cw, ch } = this.getCanvasSize();
     this.hideActionBar();
     const decision = night.pendingDecision;
@@ -1698,6 +1861,7 @@ export class BarnScene extends Phaser.Scene {
     const night = session.currentNight;
     if (!night?.pendingDecision || night.pendingDecision.kind !== 'boot') return;
 
+    this.hideBarnTooltip();
     const { cw, ch } = this.getCanvasSize();
     this.hideActionBar();
     const decision = night.pendingDecision;
@@ -1805,6 +1969,7 @@ export class BarnScene extends Phaser.Scene {
     const night = session.currentNight;
     if (!night?.pendingDecision || night.pendingDecision.kind !== 'fetch') return;
 
+    this.hideBarnTooltip();
     const { cw, ch } = this.getCanvasSize();
     this.hideActionBar();
     const decision = night.pendingDecision;
@@ -1972,6 +2137,7 @@ export class BarnScene extends Phaser.Scene {
   // === Rebuild barn display (after ability execution) ===
 
   private rebuildBarnDisplay(session: GameSession): void {
+    this.hideBarnTooltip();
     // Destroy existing card containers
     for (const container of this.cardContainers) {
       if (!container) {
@@ -2001,6 +2167,7 @@ export class BarnScene extends Phaser.Scene {
     } else {
       this.stopWindowGlow();
     }
+    this.applyContentLayout();
   }
 
   // === Animations ===
@@ -2348,6 +2515,7 @@ export class BarnScene extends Phaser.Scene {
   private showBustOverlay(message: string): void {
     if (this.bustOverlay) return;
 
+    this.hideBarnTooltip();
     const state = gameStore.getState();
     const { cw, ch } = this.getCanvasSize();
     const bounds = getOverlayBounds(state.capacity, cw, ch);
@@ -2421,6 +2589,7 @@ export class BarnScene extends Phaser.Scene {
   private showWinOverlay(session: GameSession): void {
     if (this.winOverlay) return;
 
+    this.hideBarnTooltip();
     const { cw, ch } = this.getCanvasSize();
 
     // Camera zoom burst
@@ -2546,6 +2715,7 @@ export class BarnScene extends Phaser.Scene {
   private showNightSummaryOverlay(summary: NightScoreSummary, session: GameSession): void {
     if (this.summaryOverlay) return;
 
+    this.hideBarnTooltip();
     const { cw, ch } = this.getCanvasSize();
     const bounds = getOverlayBounds(session.capacity, cw, ch);
     const overlay = this.add.container(bounds.x, bounds.y);

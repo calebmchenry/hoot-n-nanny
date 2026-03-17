@@ -53,7 +53,7 @@ describe('tradingPostLayout', () => {
     });
   });
 
-  it('uses 2 columns below 500px and 3 columns at 500px and above', () => {
+  it('uses 2 columns at both narrow and wide widths', () => {
     const small = getShopGridPositions(itemCount, 499, 844);
     const wide = getShopGridPositions(itemCount, 500, 844);
 
@@ -61,7 +61,7 @@ describe('tradingPostLayout', () => {
     const uniqueXWide = new Set(wide.slice(0, 3).map((rect) => rect.x));
 
     expect(uniqueXSmall.size).toBe(2);
-    expect(uniqueXWide.size).toBe(3);
+    expect(uniqueXWide.size).toBe(2);
   });
 
   it('keeps Start Night button visible at all target viewports', () => {

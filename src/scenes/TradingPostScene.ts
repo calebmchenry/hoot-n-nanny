@@ -22,9 +22,11 @@ import {
   getTabButtonPositions,
   scaledShopFont,
 } from './tradingPostLayout';
+import { showAbilityTooltip, hideAbilityTooltip as dismissAbilityTooltip } from './tooltipHelper';
 
 const TEXT_LIGHT_TINT = 0xf8f3e5;
 const TEXT_DARK_TINT = 0x241611;
+const TOOLTIP_HOVER_DELAY_MS = 150;
 
 interface ShopCardView {
   container: Phaser.GameObjects.Container;
@@ -70,6 +72,10 @@ export class TradingPostScene extends Phaser.Scene {
   private legendaryTabBg!: Phaser.GameObjects.Image;
   private animalsTabLabel!: Phaser.GameObjects.BitmapText;
   private legendaryTabLabel!: Phaser.GameObjects.BitmapText;
+  private abilityTooltip: Phaser.GameObjects.Container | null = null;
+  private tooltipDelayTimer: Phaser.Time.TimerEvent | null = null;
+  private tooltipAnimalId: ShopAnimalId | null = null;
+  private mobilePreviewAnimalId: ShopAnimalId | null = null;
 
   constructor() {
     super(SceneKey.TradingPost);
@@ -148,6 +154,105 @@ export class TradingPostScene extends Phaser.Scene {
     button.on('pointerout', release);
   }
 
+  private isTouchPointer(pointer: Phaser.Input.Pointer): boolean {
+    const sourceEvent = pointer.event;
+    return (
+      pointer.wasTouch ||
+      (sourceEvent instanceof PointerEvent &&
+        (sourceEvent.pointerType === 'touch' || sourceEvent.pointerType === 'pen'))
+    );
+  }
+
+  private clearTooltipDelay(): void {
+    this.tooltipDelayTimer?.destroy();
+    this.tooltipDelayTimer = null;
+  }
+
+  private hideShopTooltip(): void {
+    this.clearTooltipDelay();
+    if (!this.abilityTooltip) {
+      this.tooltipAnimalId = null;
+      return;
+    }
+    const tooltip = this.abilityTooltip;
+    this.abilityTooltip = null;
+    this.tooltipAnimalId = null;
+    dismissAbilityTooltip(this, tooltip);
+  }
+
+  private isPointerOverShopCard(currentlyOver: Phaser.GameObjects.GameObject[]): boolean {
+    return currentlyOver.some((entry) => entry.getData('shop-card-hit-area') === true);
+  }
+
+  private getShopCardTooltipAnchor(cardView: ShopCardView): { x: number; y: number } {
+    const bounds = cardView.container.getBounds();
+    return { x: bounds.centerX, y: bounds.top };
+  }
+
+  private showShopCardTooltip(cardView: ShopCardView): boolean {
+    const animalDef = getAnimalDef(cardView.item.animalId);
+    const ability = ABILITY_REGISTRY[animalDef.abilityKind];
+    if (ability.kind === 'none') {
+      this.hideShopTooltip();
+      return false;
+    }
+
+    if (this.tooltipAnimalId === cardView.item.animalId && this.abilityTooltip?.active) {
+      return true;
+    }
+
+    const { cw, ch } = this.getCanvasSize();
+    const anchor = this.getShopCardTooltipAnchor(cardView);
+    this.hideShopTooltip();
+    this.abilityTooltip = showAbilityTooltip(this, anchor.x, anchor.y, animalDef, ability, cw, ch);
+    this.tooltipAnimalId = cardView.item.animalId;
+    return true;
+  }
+
+  private scheduleDesktopTooltip(cardView: ShopCardView): void {
+    this.clearTooltipDelay();
+    this.tooltipDelayTimer = this.time.delayedCall(TOOLTIP_HOVER_DELAY_MS, () => {
+      this.showShopCardTooltip(cardView);
+    });
+  }
+
+  private handleMobileCardTap(cardView: ShopCardView): void {
+    const isSecondTap = this.mobilePreviewAnimalId === cardView.item.animalId;
+    if (isSecondTap && cardView.item.affordable) {
+      this.mobilePreviewAnimalId = null;
+      this.hideShopTooltip();
+      this.onPurchase(cardView.item.animalId, cardView.container);
+      return;
+    }
+
+    this.mobilePreviewAnimalId = cardView.item.animalId;
+    const didShowTooltip = this.showShopCardTooltip(cardView);
+    if (!didShowTooltip) {
+      this.tweens.add({
+        targets: cardView.container,
+        scaleX: 1.04,
+        scaleY: 1.04,
+        duration: 80,
+        yoyo: true,
+        ease: 'Quad.Out',
+      });
+    }
+  }
+
+  private handleGlobalPointerDown(
+    pointer: Phaser.Input.Pointer,
+    currentlyOver: Phaser.GameObjects.GameObject[] = [],
+  ): void {
+    if (!this.isTouchPointer(pointer)) {
+      return;
+    }
+    if (this.isPointerOverShopCard(currentlyOver)) {
+      return;
+    }
+    this.mobilePreviewAnimalId = null;
+    this.hideShopTooltip();
+  }
+
   private transitionToBarn(): void {
     if (this.cameras.main.fadeEffect?.isRunning) {
       return;
@@ -160,6 +265,10 @@ export class TradingPostScene extends Phaser.Scene {
 
   create(): void {
     this.activeTab = 'animals';
+    this.mobilePreviewAnimalId = null;
+    this.tooltipAnimalId = null;
+    this.abilityTooltip = null;
+    this.tooltipDelayTimer = null;
     const { cw, ch } = this.getCanvasSize();
 
     this.background = this.add
@@ -182,6 +291,7 @@ export class TradingPostScene extends Phaser.Scene {
     this.createStartNightButton(cw, ch);
     this.setDomAttributes();
 
+    this.input.on('pointerdown', this.handleGlobalPointerDown, this);
     this.scale.on('resize', this.handleResize, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.shutdown, this);
     this.applyLayout(cw, ch);
@@ -333,6 +443,8 @@ export class TradingPostScene extends Phaser.Scene {
 
   private switchTab(tab: ShopTab): void {
     this.activeTab = tab;
+    this.mobilePreviewAnimalId = null;
+    this.hideShopTooltip();
     const { cw, ch } = this.getCanvasSize();
     this.updateTabHighlight(cw, ch);
     this.shopCards.forEach(({ container }) => container.destroy());
@@ -494,69 +606,49 @@ export class TradingPostScene extends Phaser.Scene {
 
   private layoutShopCard(cardView: ShopCardView, pos: Rect): void {
     const { ch } = this.getCanvasSize();
-    const compact = pos.h < 72;
 
     cardView.container.setPosition(pos.x, pos.y);
     cardView.bg.setDisplaySize(pos.w, pos.h);
 
-    const badgeSize = compact ? 14 : 18;
-    const spriteY = compact ? Math.round(pos.h * 0.34) : Math.round(pos.h * 0.28);
-    const spriteScale = compact
-      ? Math.max(1.0, Math.min(1.6, pos.h / 30))
-      : Math.max(1.4, Math.min(2.2, pos.h / 42));
+    const badgeSize = Math.max(16, Math.round((18 / 108) * pos.h));
+    const spriteY = Math.round(pos.h * 0.3);
+    const spriteScale = Math.max(1.4, Math.min(2.4, pos.h / 44));
 
     cardView.sprite.setPosition(pos.w / 2, spriteY).setScale(spriteScale);
 
-    const nameY = compact ? Math.round(pos.h * 0.48) : Math.round(pos.h * 0.5);
+    const nameY = Math.round(pos.h * 0.5);
     cardView.nameText
       .setPosition(pos.w / 2, nameY)
-      .setFontSize(this.fontPx(compact ? 9 : 10, ch))
+      .setFontSize(this.fontPx(10, ch))
       .setMaxWidth(Math.max(36, pos.w - 8));
 
-    const costY = pos.h - (compact ? 10 : 22);
+    const costY = pos.h - 22;
     cardView.costBadge.setPosition(6, costY).setDisplaySize(badgeSize, badgeSize);
-    cardView.costText
-      .setPosition(6 + badgeSize + 4, costY)
-      .setFontSize(this.fontPx(compact ? 8 : 10, ch));
+    cardView.costText.setPosition(6 + badgeSize + 4, costY).setFontSize(this.fontPx(10, ch));
 
-    if (compact) {
-      cardView.mischiefLabel
-        .setText(`M${cardView.item.mischief}/H${cardView.item.hay}`)
-        .setPosition(pos.w - 6, 8)
-        .setFontSize(this.fontPx(8, ch));
-      cardView.hayLabel.setVisible(false);
-      cardView.stockText
-        .setPosition(pos.w - 22, pos.h - 9)
-        .setOrigin(1, 0.5)
-        .setFontSize(this.fontPx(8, ch));
-      if (cardView.abilityLabel) {
-        cardView.abilityLabel.setVisible(false);
-      }
-    } else {
-      cardView.mischiefLabel
+    cardView.mischiefLabel
+      .setVisible(true)
+      .setText(`+${cardView.item.mischief}M`)
+      .setPosition(pos.w - 8, pos.h - 34)
+      .setFontSize(this.fontPx(9, ch));
+    cardView.hayLabel
+      .setVisible(true)
+      .setText(`+${cardView.item.hay}H`)
+      .setPosition(pos.w - 8, pos.h - 20)
+      .setFontSize(this.fontPx(9, ch));
+    cardView.stockText
+      .setPosition(pos.w / 2, pos.h - 8)
+      .setOrigin(0.5, 0.5)
+      .setFontSize(this.fontPx(9, ch));
+    if (cardView.abilityLabel) {
+      cardView.abilityLabel
         .setVisible(true)
-        .setText(`+${cardView.item.mischief}M`)
-        .setPosition(pos.w - 8, pos.h - 34)
-        .setFontSize(this.fontPx(9, ch));
-      cardView.hayLabel
-        .setVisible(true)
-        .setText(`+${cardView.item.hay}H`)
-        .setPosition(pos.w - 8, pos.h - 20)
-        .setFontSize(this.fontPx(9, ch));
-      cardView.stockText
-        .setPosition(pos.w / 2, pos.h - 8)
-        .setOrigin(0.5, 0.5)
-        .setFontSize(this.fontPx(9, ch));
-      if (cardView.abilityLabel) {
-        cardView.abilityLabel
-          .setVisible(true)
-          .setPosition(pos.w / 2, Math.round(pos.h * 0.7))
-          .setFontSize(this.fontPx(8, ch));
-      }
+        .setPosition(pos.w / 2, Math.round(pos.h * 0.7))
+        .setFontSize(this.fontPx(8, ch));
     }
 
     if (cardView.star) {
-      const starSize = compact ? 10 : 14;
+      const starSize = Math.max(12, Math.round((14 / 108) * pos.h));
       cardView.star.setPosition(pos.w - 12, 4).setDisplaySize(starSize, starSize);
     }
 
@@ -566,24 +658,46 @@ export class TradingPostScene extends Phaser.Scene {
   private refreshShopCardInteractivity(cardView: ShopCardView, pos: Rect): void {
     cardView.bg.removeInteractive();
     cardView.bg.removeAllListeners();
+    cardView.bg.setData('shop-card-hit-area', true);
 
-    if (cardView.item.affordable) {
-      cardView.container.setAlpha(1.0);
-      cardView.bg.setInteractive(
-        new Phaser.Geom.Rectangle(0, 0, pos.w, pos.h),
-        Phaser.Geom.Rectangle.Contains,
-      );
-      cardView.bg.on(
-        'pointerdown',
-        () => this.onPurchase(cardView.item.animalId, cardView.container),
-        this,
-      );
-    } else {
-      cardView.container.setAlpha(0.4);
-    }
+    cardView.container.setAlpha(cardView.item.affordable ? 1.0 : 0.4);
+    cardView.bg.setInteractive(
+      new Phaser.Geom.Rectangle(0, 0, pos.w, pos.h),
+      Phaser.Geom.Rectangle.Contains,
+    );
+
+    cardView.bg.on('pointerover', (pointer: Phaser.Input.Pointer) => {
+      if (this.isTouchPointer(pointer)) {
+        return;
+      }
+      this.scheduleDesktopTooltip(cardView);
+    });
+
+    cardView.bg.on('pointerout', () => {
+      this.clearTooltipDelay();
+      if (this.tooltipAnimalId === cardView.item.animalId) {
+        this.hideShopTooltip();
+      }
+    });
+
+    cardView.bg.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+      if (this.isTouchPointer(pointer)) {
+        this.handleMobileCardTap(cardView);
+        return;
+      }
+
+      this.mobilePreviewAnimalId = null;
+      this.clearTooltipDelay();
+      this.hideShopTooltip();
+      if (cardView.item.affordable) {
+        this.onPurchase(cardView.item.animalId, cardView.container);
+      }
+    });
   }
 
   private onPurchase(animalId: ShopAnimalId, container: Phaser.GameObjects.Container): void {
+    this.mobilePreviewAnimalId = null;
+    this.hideShopTooltip();
     const session = gameStore.getState();
     const result = purchaseAnimalInSession(session, animalId);
     gameStore.setState(result.session);
@@ -660,6 +774,8 @@ export class TradingPostScene extends Phaser.Scene {
   }
 
   private onUpgradeCapacity(): void {
+    this.mobilePreviewAnimalId = null;
+    this.hideShopTooltip();
     const session = gameStore.getState();
     const result = upgradeCapacityInSession(session);
     gameStore.setState(result.session);
@@ -693,6 +809,8 @@ export class TradingPostScene extends Phaser.Scene {
   }
 
   private onStartNight(): void {
+    this.mobilePreviewAnimalId = null;
+    this.hideShopTooltip();
     const session = gameStore.getState();
     const nextSession = startNextNight(session);
     gameStore.setState(nextSession);
@@ -784,15 +902,25 @@ export class TradingPostScene extends Phaser.Scene {
   private handleResize(gameSize: Phaser.Structs.Size): void {
     const cw = Math.round(gameSize.width);
     const ch = Math.round(gameSize.height);
+    this.hideShopTooltip();
+    this.mobilePreviewAnimalId = null;
     this.applyLayout(cw, ch);
   }
 
   private shutdown(): void {
+    this.input.off('pointerdown', this.handleGlobalPointerDown, this);
     this.scale.off('resize', this.handleResize, this);
+    this.clearTooltipDelay();
+    this.abilityTooltip?.destroy();
+    this.abilityTooltip = null;
+    this.mobilePreviewAnimalId = null;
+    this.tooltipAnimalId = null;
   }
 
   private refreshDisplay(): void {
     const session = gameStore.getState();
+    this.mobilePreviewAnimalId = null;
+    this.hideShopTooltip();
 
     this.mischiefText.setText(String(session.mischief));
     this.hayText.setText(String(session.hay));

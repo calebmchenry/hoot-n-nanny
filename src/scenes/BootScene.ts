@@ -200,8 +200,8 @@ const generateShapeTextures = (scene: Phaser.Scene): void => {
   });
 };
 
-const EMOJI_TEXTURE_SIZE = 64;
-const EMOJI_FONT_SIZE = 48;
+const EMOJI_TEXTURE_SIZE = 128;
+const EMOJI_FONT_SIZE = 96;
 const EMOJI_FONT_STACK = `"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif`;
 const EMOJI_FALLBACK_BG = '#8b6914';
 const EMOJI_FALLBACK_TEXT = '#f8f3e5';
@@ -222,11 +222,11 @@ const drawEmojiFallback = (ctx: CanvasRenderingContext2D, animalId: AnimalId): v
   ctx.clearRect(0, 0, EMOJI_TEXTURE_SIZE, EMOJI_TEXTURE_SIZE);
   ctx.fillStyle = EMOJI_FALLBACK_BG;
   ctx.beginPath();
-  ctx.arc(center, center, center - 4, 0, Math.PI * 2);
+  ctx.arc(center, center, 60, 0, Math.PI * 2);
   ctx.fill();
 
   ctx.fillStyle = EMOJI_FALLBACK_TEXT;
-  ctx.font = `bold ${EMOJI_FONT_SIZE - 8}px sans-serif`;
+  ctx.font = 'bold 80px sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(animalId[0], center, center);
@@ -261,7 +261,7 @@ const generateEmojiTextures = (scene: Phaser.Scene): void => {
       texture = scene.textures.addCanvas(animalId, canvas);
     }
 
-    texture?.setFilter(Phaser.Textures.FilterMode.LINEAR);
+    texture?.setFilter(Phaser.Textures.FilterMode.NEAREST);
   }
 };
 
