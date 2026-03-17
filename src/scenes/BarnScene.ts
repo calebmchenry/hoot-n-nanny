@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { LAYOUT, PALETTE, ANIMATION, TEXTURES, DOM_PHASE } from '../config/constants';
+import { LAYOUT, PALETTE, ANIMATION, TEXTURES, DOM_PHASE, DEPTH } from '../config/constants';
 import {
   getDynamicSlotRects,
   getResourceBannerPosition,
@@ -37,13 +37,11 @@ import type {
 } from '../game/types';
 import { GamePhase } from '../game/types';
 
-const TEXT_STYLE_DARK: Phaser.Types.GameObjects.Text.TextStyle = {
-  fontFamily: 'monospace',
-  color: PALETTE.TEXT_DARK,
-};
+const TEXT_DARK_TINT = 0x241611;
+const TEXT_LIGHT_TINT = 0xf8f3e5;
 
 const TEXT_STYLE_LIGHT: Phaser.Types.GameObjects.Text.TextStyle = {
-  fontFamily: 'monospace',
+  fontFamily: 'sans-serif',
   color: PALETTE.TEXT_LIGHT,
 };
 
@@ -59,36 +57,50 @@ export class BarnScene extends Phaser.Scene {
   private pendingResize: { cw: number; ch: number } | null = null;
 
   // Environment
-  private barnBackground!: Phaser.GameObjects.Image;
+  private skyBand!: Phaser.GameObjects.Image;
+  private wallTile!: Phaser.GameObjects.TileSprite;
   private rafter!: Phaser.GameObjects.Image;
-  private floorStraw!: Phaser.GameObjects.Image;
+  private floorStraw!: Phaser.GameObjects.TileSprite;
   private farmhouseImage!: Phaser.GameObjects.Image;
+  private farmhouseShadow!: Phaser.GameObjects.Ellipse;
+  private deckShadow!: Phaser.GameObjects.Ellipse;
   private deckStack!: Phaser.GameObjects.Image;
   private windowGlow!: Phaser.GameObjects.Image;
-  private noiseLabel!: Phaser.GameObjects.Text;
+  private noiseLabel!: Phaser.GameObjects.BitmapText;
+  private vignette!: Phaser.GameObjects.Image;
   private windowGlowTween: Phaser.Tweens.Tween | null = null;
+  private deckFloatTween: Phaser.Tweens.Tween | null = null;
+  private dustEmitter: Phaser.GameObjects.Particles.ParticleEmitter | null = null;
+  private warningEmitter: Phaser.GameObjects.Particles.ParticleEmitter | null = null;
 
   // Slots
   private slotImages: Phaser.GameObjects.Image[] = [];
   private cardContainers: Phaser.GameObjects.Container[] = [];
+  private cardShadows: Phaser.GameObjects.Image[] = [];
 
   // HUD texts
-  private nightText!: Phaser.GameObjects.Text;
-  private mischiefText!: Phaser.GameObjects.Text;
-  private hayText!: Phaser.GameObjects.Text;
-  private capacityText!: Phaser.GameObjects.Text;
-  private deckCountText!: Phaser.GameObjects.Text;
-  private pennedUpText!: Phaser.GameObjects.Text;
-  private legendaryText!: Phaser.GameObjects.Text;
+  private nightText!: Phaser.GameObjects.BitmapText;
+  private mischiefText!: Phaser.GameObjects.BitmapText;
+  private hayText!: Phaser.GameObjects.BitmapText;
+  private capacityText!: Phaser.GameObjects.BitmapText;
+  private deckCountText!: Phaser.GameObjects.BitmapText;
+  private pennedUpText!: Phaser.GameObjects.BitmapText;
+  private legendaryText!: Phaser.GameObjects.BitmapText;
+  private previousHudValues: {
+    mischief: number;
+    hay: number;
+    deck: number;
+    barn: number;
+  } | null = null;
 
   // Noise meter
   private noiseDots: Phaser.GameObjects.Image[] = [];
 
   // Action buttons
   private primaryButton!: Phaser.GameObjects.Image;
-  private primaryButtonText!: Phaser.GameObjects.Text;
+  private primaryButtonText!: Phaser.GameObjects.BitmapText;
   private secondaryButton: Phaser.GameObjects.Image | null = null;
-  private secondaryButtonText: Phaser.GameObjects.Text | null = null;
+  private secondaryButtonText: Phaser.GameObjects.BitmapText | null = null;
   private actionBarVisible = true;
 
   // Overlays
@@ -119,8 +131,38 @@ export class BarnScene extends Phaser.Scene {
     };
   }
 
-  private fontPx(base: number, ch: number): string {
-    return `${scaledFont(base, ch)}px`;
+  private fontPx(base: number, ch: number): number {
+    return scaledFont(base, ch);
+  }
+
+  private fontCss(base: number, ch: number): string {
+    return `${this.fontPx(base, ch)}px`;
+  }
+
+  private addBitmapText(
+    x: number,
+    y: number,
+    text: string,
+    size: number,
+    tint = TEXT_LIGHT_TINT,
+  ): Phaser.GameObjects.BitmapText {
+    return this.add.bitmapText(x, y, 'pixel-font', text, size).setTint(tint);
+  }
+
+  private pulseNumericText(target: Phaser.GameObjects.BitmapText): void {
+    target.setScale(1.28);
+    target.setTintFill(0xffffff);
+    this.tweens.add({
+      targets: target,
+      scaleX: 1,
+      scaleY: 1,
+      duration: ANIMATION.STAT_POP_MS,
+      ease: 'Back.Out',
+      onComplete: () => {
+        target.clearTint();
+        target.setTint(TEXT_LIGHT_TINT);
+      },
+    });
   }
 
   private resizeOverlayContainer(container: Phaser.GameObjects.Container, bounds: Rect): void {
@@ -132,6 +174,16 @@ export class BarnScene extends Phaser.Scene {
 
     container.setPosition(bounds.x, bounds.y);
     container.setScale(bounds.w / baseW, bounds.h / baseH);
+  }
+
+  private transitionToScene(nextScene: SceneKey): void {
+    if (this.cameras.main.fadeEffect?.isRunning) {
+      return;
+    }
+    this.cameras.main.once('camerafadeoutcomplete', () => {
+      this.scene.start(nextScene);
+    });
+    this.cameras.main.fadeOut(ANIMATION.SCENE_FADE_MS, 0, 0, 0);
   }
 
   create(): void {
@@ -151,11 +203,16 @@ export class BarnScene extends Phaser.Scene {
     this.winOverlay = null;
     this.bustOverlaySummary = null;
     this.cardContainers = [];
+    this.cardShadows = [];
     this.slotImages = [];
     this.noiseDots = [];
     this.secondaryButton = null;
     this.secondaryButtonText = null;
     this.windowGlowTween = null;
+    this.deckFloatTween = null;
+    this.dustEmitter = null;
+    this.warningEmitter = null;
+    this.previousHudValues = null;
     this.actionBarVisible = true;
     this.pendingResize = null;
     this.infoPanelDismissArea = null;
@@ -169,31 +226,54 @@ export class BarnScene extends Phaser.Scene {
     this.updateDomPhase(state);
 
     // === Environment rendering ===
-    this.barnBackground = this.add
+    const skyHeight = Math.max(72, Math.round((88 / LAYOUT.CANVAS.REF_HEIGHT) * ch));
+    this.skyBand = this.add
       .image(0, 0, TEXTURES.BARN_PLANK)
       .setOrigin(0)
-      .setDisplaySize(cw, ch);
+      .setDisplaySize(cw, skyHeight)
+      .setDepth(DEPTH.BG);
+
+    const floorTop = Math.round((LAYOUT.BARN.FLOOR_Y / LAYOUT.CANVAS.REF_HEIGHT) * ch);
+    const wallTop = skyHeight;
+    const wallHeight = Math.max(96, floorTop - wallTop);
+    this.wallTile = this.add
+      .tileSprite(0, wallTop, cw, wallHeight, TEXTURES.BARN_PLANK_TILE)
+      .setOrigin(0, 0)
+      .setDepth(DEPTH.WALL);
+
     const rafterHeight = Math.max(30, Math.round((42 / LAYOUT.CANVAS.REF_HEIGHT) * ch));
     this.rafter = this.add
       .image(0, 0, TEXTURES.RAFTER)
       .setOrigin(0)
-      .setDisplaySize(cw, rafterHeight);
-    const floorTop = Math.round((LAYOUT.BARN.FLOOR_Y / LAYOUT.CANVAS.REF_HEIGHT) * ch);
+      .setDisplaySize(cw, rafterHeight)
+      .setDepth(DEPTH.RAFTER);
+
     const floorHeight = Math.max(
       80,
       Math.round((LAYOUT.BARN.FLOOR_HEIGHT / LAYOUT.CANVAS.REF_HEIGHT) * ch),
     );
     this.floorStraw = this.add
-      .image(0, floorTop, TEXTURES.FLOOR_STRAW)
+      .tileSprite(0, floorTop, cw, floorHeight, TEXTURES.FLOOR_STRAW_TILE)
       .setOrigin(0)
-      .setDisplaySize(cw, floorHeight);
+      .setDepth(DEPTH.FLOOR);
 
     // Farmhouse
     const farmhouseRect = getFarmhouseRect(capacity, cw, ch);
+    this.farmhouseShadow = this.add
+      .ellipse(
+        farmhouseRect.x + farmhouseRect.w * 0.56,
+        farmhouseRect.y + farmhouseRect.h * 0.94,
+        farmhouseRect.w * 0.92,
+        farmhouseRect.h * 0.22,
+        0x000000,
+        0.2,
+      )
+      .setDepth(DEPTH.FLOOR);
     this.farmhouseImage = this.add
       .image(farmhouseRect.x, farmhouseRect.y, TEXTURES.FARMHOUSE)
       .setOrigin(0)
-      .setDisplaySize(farmhouseRect.w, farmhouseRect.h);
+      .setDisplaySize(farmhouseRect.w, farmhouseRect.h)
+      .setDepth(DEPTH.FARMHOUSE);
 
     // Window glow (initially invisible)
     const windowRect = getFarmhouseWindowRect(capacity, cw, ch);
@@ -201,25 +281,47 @@ export class BarnScene extends Phaser.Scene {
       .image(windowRect.x, windowRect.y, TEXTURES.WINDOW_GLOW)
       .setOrigin(0)
       .setDisplaySize(windowRect.w, windowRect.h)
-      .setAlpha(0);
+      .setAlpha(0)
+      .setDepth(DEPTH.FARMHOUSE + 1);
 
     // Deck stack
     const deckRect = getDeckStackPosition(capacity, cw, ch);
+    this.deckShadow = this.add
+      .ellipse(
+        deckRect.x + deckRect.w * 0.5,
+        deckRect.y + deckRect.h * 0.88,
+        deckRect.w * 0.9,
+        deckRect.h * 0.24,
+        0x000000,
+        0.24,
+      )
+      .setDepth(DEPTH.FLOOR);
     this.deckStack = this.add
       .image(deckRect.x, deckRect.y, TEXTURES.DECK_BACK)
       .setOrigin(0)
-      .setDisplaySize(deckRect.w, deckRect.h);
+      .setDisplaySize(deckRect.w, deckRect.h)
+      .setDepth(DEPTH.FARMHOUSE);
 
     // Deck remaining count
     const night = state.currentNight;
     const deckRemaining = night ? night.deck.length : 0;
-    this.deckCountText = this.add
-      .text(deckRect.x + deckRect.w / 2, deckRect.y + deckRect.h / 2, `${deckRemaining}`, {
-        ...TEXT_STYLE_LIGHT,
-        fontSize: this.fontPx(16, ch),
-        fontStyle: 'bold',
-      })
-      .setOrigin(0.5);
+    this.deckCountText = this.addBitmapText(
+      deckRect.x + deckRect.w / 2,
+      deckRect.y + deckRect.h / 2,
+      `${deckRemaining}`,
+      this.fontPx(14, ch),
+    )
+      .setOrigin(0.5)
+      .setDepth(DEPTH.HUD);
+
+    this.deckFloatTween = this.tweens.add({
+      targets: this.deckStack,
+      y: { from: deckRect.y - 2, to: deckRect.y + 2 },
+      duration: 3000,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut',
+    });
 
     // === Empty slot outlines ===
     const slotRects = getDynamicSlotRects(capacity, cw, ch);
@@ -227,7 +329,8 @@ export class BarnScene extends Phaser.Scene {
       return this.add
         .image(rect.x, rect.y, TEXTURES.SLOT_EMPTY)
         .setOrigin(0)
-        .setDisplaySize(rect.w, rect.h);
+        .setDisplaySize(rect.w, rect.h)
+        .setDepth(DEPTH.SLOTS);
     });
 
     // === Resource banner ===
@@ -238,45 +341,49 @@ export class BarnScene extends Phaser.Scene {
     const capacityOffsetY = Math.round((28 / LAYOUT.CANVAS.REF_HEIGHT) * ch);
     const pennedOffsetY = Math.round((42 / LAYOUT.CANVAS.REF_HEIGHT) * ch);
     const nightNum = night ? night.nightNumber : state.nightNumber;
-    this.nightText = this.add
-      .text(bannerRect.x, bannerRect.y, `Night ${nightNum}`, {
-        ...TEXT_STYLE_LIGHT,
-        fontSize: this.fontPx(18, ch),
-        fontStyle: 'bold',
-      })
-      .setOrigin(0);
+    this.nightText = this.addBitmapText(
+      bannerRect.x,
+      bannerRect.y,
+      `Night ${nightNum}`,
+      this.fontPx(14, ch),
+    )
+      .setOrigin(0)
+      .setDepth(DEPTH.HUD);
 
-    this.mischiefText = this.add
-      .text(bannerRect.x + labelOffsetX, bannerRect.y, `Mischief: ${state.mischief}`, {
-        ...TEXT_STYLE_LIGHT,
-        fontSize: this.fontPx(14, ch),
-      })
-      .setOrigin(0);
+    this.mischiefText = this.addBitmapText(
+      bannerRect.x + labelOffsetX,
+      bannerRect.y,
+      `Mischief: ${state.mischief}`,
+      this.fontPx(12, ch),
+    )
+      .setOrigin(0)
+      .setDepth(DEPTH.HUD);
 
-    this.hayText = this.add
-      .text(bannerRect.x + labelOffsetX, bannerRect.y + hayOffsetY, `Hay: ${state.hay}`, {
-        ...TEXT_STYLE_LIGHT,
-        fontSize: this.fontPx(14, ch),
-      })
-      .setOrigin(0);
+    this.hayText = this.addBitmapText(
+      bannerRect.x + labelOffsetX,
+      bannerRect.y + hayOffsetY,
+      `Hay: ${state.hay}`,
+      this.fontPx(12, ch),
+    )
+      .setOrigin(0)
+      .setDepth(DEPTH.HUD);
 
     // Legendary tracker
     const legendaryCount = night?.legendaryCount ?? 0;
-    this.legendaryText = this.add
-      .text(bannerRect.x + legendaryOffsetX, bannerRect.y, `Legendary: ${legendaryCount}/3`, {
-        ...TEXT_STYLE_LIGHT,
-        fontSize: this.fontPx(12, ch),
-      })
-      .setOrigin(0);
+    this.legendaryText = this.addBitmapText(
+      bannerRect.x + legendaryOffsetX,
+      bannerRect.y,
+      `Legendary: ${legendaryCount}/3`,
+      this.fontPx(10, ch),
+    )
+      .setOrigin(0)
+      .setDepth(DEPTH.HUD);
 
     // === Noise meter ===
     const noiseRect = getNoiseMeterPosition(capacity, cw, ch);
-    this.noiseLabel = this.add
-      .text(noiseRect.x, noiseRect.y, 'Noise:', {
-        ...TEXT_STYLE_LIGHT,
-        fontSize: this.fontPx(14, ch),
-      })
-      .setOrigin(0);
+    this.noiseLabel = this.addBitmapText(noiseRect.x, noiseRect.y, 'Noise:', this.fontPx(12, ch))
+      .setOrigin(0)
+      .setDepth(DEPTH.HUD);
 
     const dotSize = Math.max(14, Math.round((18 / LAYOUT.CANVAS.REF_HEIGHT) * ch));
     const dotStartX = Math.round((60 / LAYOUT.CANVAS.REF_WIDTH) * cw);
@@ -288,30 +395,65 @@ export class BarnScene extends Phaser.Scene {
       const dot = this.add
         .image(noiseRect.x + dotStartX + i * dotGap, noiseRect.y + dotOffsetY, dotTexture)
         .setOrigin(0)
-        .setDisplaySize(dotSize, dotSize);
+        .setDisplaySize(dotSize, dotSize)
+        .setDepth(DEPTH.HUD);
       this.noiseDots.push(dot);
     }
 
     // === Capacity indicator ===
     const barnCount = night ? night.barn.length : 0;
-    this.capacityText = this.add
-      .text(bannerRect.x, bannerRect.y + capacityOffsetY, `Barn: ${barnCount}/${capacity}`, {
-        ...TEXT_STYLE_LIGHT,
-        fontSize: this.fontPx(14, ch),
-      })
-      .setOrigin(0);
+    this.capacityText = this.addBitmapText(
+      bannerRect.x,
+      bannerRect.y + capacityOffsetY,
+      `Barn: ${barnCount}/${capacity}`,
+      this.fontPx(12, ch),
+    )
+      .setOrigin(0)
+      .setDepth(DEPTH.HUD);
 
     // === Penned up indicator ===
-    this.pennedUpText = this.add
-      .text(bannerRect.x + labelOffsetX, bannerRect.y + pennedOffsetY, '', {
-        ...TEXT_STYLE_LIGHT,
-        fontSize: this.fontPx(12, ch),
-      })
-      .setOrigin(0);
+    this.pennedUpText = this.addBitmapText(
+      bannerRect.x + labelOffsetX,
+      bannerRect.y + pennedOffsetY,
+      '',
+      this.fontPx(10, ch),
+    )
+      .setOrigin(0)
+      .setDepth(DEPTH.HUD);
     this.updatePennedUpIndicator(state);
 
     // === Action buttons (initial: single draw button) ===
     this.createActionButtons(false, cw, ch);
+
+    this.dustEmitter = this.add
+      .particles(0, 0, TEXTURES.FX_DUST, {
+        x: { min: 0, max: cw },
+        y: { min: skyHeight + 8, max: floorTop + floorHeight - 8 },
+        speedX: { min: -4, max: 7 },
+        speedY: { min: -3, max: 2 },
+        scale: { start: 0.55, end: 0.12 },
+        alpha: { start: 0.18, end: 0 },
+        lifespan: { min: 5000, max: 9000 },
+        frequency: 320,
+        quantity: 1,
+        tint: [PALETTE.PARCHMENT, PALETTE.STRAW, PALETTE.STRAW_HIGHLIGHT],
+        maxAliveParticles: 18,
+      })
+      .setDepth(DEPTH.DUST);
+
+    this.vignette = this.add
+      .image(cw / 2, ch / 2, TEXTURES.VIGNETTE)
+      .setOrigin(0.5)
+      .setDisplaySize(cw, ch)
+      .setDepth(DEPTH.VIGNETTE)
+      .setAlpha(0.35);
+
+    this.previousHudValues = {
+      mischief: state.mischief,
+      hay: state.hay,
+      deck: deckRemaining,
+      barn: barnCount,
+    };
 
     // If resuming a night with draws already made, render existing barn cards
     if (night && night.barn.length > 0) {
@@ -340,6 +482,7 @@ export class BarnScene extends Phaser.Scene {
     this.scale.on('resize', this.handleResize, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.shutdown, this);
     this.applyLayout(cw, ch);
+    this.cameras.main.fadeIn(ANIMATION.SCENE_FADE_MS, 0, 0, 0);
 
     // Signal game ready
     (window as Window & { __GAME_READY__?: boolean }).__GAME_READY__ = true;
@@ -409,46 +552,111 @@ export class BarnScene extends Phaser.Scene {
       .image(layout.primary.x, layout.primary.y, TEXTURES.BUTTON_PRIMARY)
       .setOrigin(0)
       .setDisplaySize(layout.primary.w, layout.primary.h)
-      .setInteractive();
+      .setInteractive()
+      .setDepth(DEPTH.BUTTONS);
 
     const primaryLabel = dual ? 'KEEP GOING' : 'DRAW ANIMAL';
-    this.primaryButtonText = this.add
-      .text(
-        layout.primary.x + layout.primary.w / 2,
-        layout.primary.y + layout.primary.h / 2,
-        primaryLabel,
-        {
-          ...TEXT_STYLE_LIGHT,
-          fontSize: this.fontPx(18, height),
-          fontStyle: 'bold',
-        },
-      )
-      .setOrigin(0.5);
+    this.primaryButtonText = this.addBitmapText(
+      layout.primary.x + layout.primary.w / 2,
+      layout.primary.y + layout.primary.h / 2,
+      primaryLabel,
+      this.fontPx(14, height),
+    )
+      .setOrigin(0.5)
+      .setDepth(DEPTH.BUTTONS + 1);
 
     this.primaryButton.on('pointerdown', this.onDrawAnimal, this);
+    this.addButtonPressFeedback(this.primaryButton, this.primaryButtonText);
 
     if (dual && layout.secondary) {
       this.secondaryButton = this.add
         .image(layout.secondary.x, layout.secondary.y, TEXTURES.BUTTON_SECONDARY)
         .setOrigin(0)
         .setDisplaySize(layout.secondary.w, layout.secondary.h)
-        .setInteractive();
+        .setInteractive()
+        .setDepth(DEPTH.BUTTONS);
 
-      this.secondaryButtonText = this.add
-        .text(
-          layout.secondary.x + layout.secondary.w / 2,
-          layout.secondary.y + layout.secondary.h / 2,
-          'CALL IT A NIGHT',
-          {
-            ...TEXT_STYLE_LIGHT,
-            fontSize: this.fontPx(18, height),
-            fontStyle: 'bold',
-          },
-        )
-        .setOrigin(0.5);
+      this.secondaryButtonText = this.addBitmapText(
+        layout.secondary.x + layout.secondary.w / 2,
+        layout.secondary.y + layout.secondary.h / 2,
+        'CALL IT A NIGHT',
+        this.fontPx(14, height),
+      )
+        .setOrigin(0.5)
+        .setDepth(DEPTH.BUTTONS + 1);
 
       this.secondaryButton.on('pointerdown', this.onCallItANight, this);
+      this.addButtonPressFeedback(this.secondaryButton, this.secondaryButtonText);
     }
+  }
+
+  private addButtonPressFeedback(
+    button: Phaser.GameObjects.Image,
+    label: Phaser.GameObjects.BitmapText,
+  ): void {
+    if (button.getData('feedback-bound') === true) {
+      return;
+    }
+
+    button.setData('feedback-bound', true);
+    button.setData('baseY', button.y);
+    label.setData('baseY', label.y);
+
+    button.on('pointerdown', () => {
+      if (!button.input?.enabled) {
+        return;
+      }
+      this.tweens.killTweensOf([button, label]);
+      const baseY = Number(button.getData('baseY')) || button.y;
+      const labelBaseY = Number(label.getData('baseY')) || label.y;
+      this.tweens.add({
+        targets: [button, label],
+        scaleX: 0.97,
+        scaleY: 0.97,
+        duration: 70,
+        ease: 'Quad.Out',
+      });
+      this.tweens.add({
+        targets: button,
+        y: baseY + 2,
+        duration: 70,
+        ease: 'Quad.Out',
+      });
+      this.tweens.add({
+        targets: label,
+        y: labelBaseY + 2,
+        duration: 70,
+        ease: 'Quad.Out',
+      });
+    });
+
+    const release = (): void => {
+      this.tweens.killTweensOf([button, label]);
+      const baseY = Number(button.getData('baseY')) || button.y;
+      const labelBaseY = Number(label.getData('baseY')) || label.y;
+      this.tweens.add({
+        targets: [button, label],
+        scaleX: 1,
+        scaleY: 1,
+        duration: 110,
+        ease: 'Back.Out',
+      });
+      this.tweens.add({
+        targets: button,
+        y: baseY,
+        duration: 110,
+        ease: 'Back.Out',
+      });
+      this.tweens.add({
+        targets: label,
+        y: labelBaseY,
+        duration: 110,
+        ease: 'Back.Out',
+      });
+    };
+
+    button.on('pointerup', release);
+    button.on('pointerout', release);
   }
 
   private disableButtons(): void {
@@ -505,7 +713,9 @@ export class BarnScene extends Phaser.Scene {
       .setDisplaySize(layout.primary.w, layout.primary.h);
     this.primaryButtonText
       .setPosition(layout.primary.x + layout.primary.w / 2, layout.primary.y + layout.primary.h / 2)
-      .setStyle({ fontSize: this.fontPx(18, ch) });
+      .setFontSize(this.fontPx(14, ch));
+    this.primaryButton.setData('baseY', layout.primary.y);
+    this.primaryButtonText.setData('baseY', layout.primary.y + layout.primary.h / 2);
 
     if (dual && this.secondaryButton && this.secondaryButtonText && layout.secondary) {
       this.secondaryButton
@@ -516,7 +726,9 @@ export class BarnScene extends Phaser.Scene {
           layout.secondary.x + layout.secondary.w / 2,
           layout.secondary.y + layout.secondary.h / 2,
         )
-        .setStyle({ fontSize: this.fontPx(18, ch) });
+        .setFontSize(this.fontPx(14, ch));
+      this.secondaryButton.setData('baseY', layout.secondary.y);
+      this.secondaryButtonText.setData('baseY', layout.secondary.y + layout.secondary.h / 2);
     }
   }
 
@@ -532,28 +744,56 @@ export class BarnScene extends Phaser.Scene {
     const overlayBounds = getOverlayBounds(capacity, cw, ch);
     const infoPanelBounds = getInfoPanelBounds(cw, ch);
 
-    this.barnBackground.setDisplaySize(cw, ch);
+    const skyHeight = Math.max(72, Math.round((88 / LAYOUT.CANVAS.REF_HEIGHT) * ch));
+    this.skyBand.setPosition(0, 0).setDisplaySize(cw, skyHeight);
+
+    const floorTop = Math.round((LAYOUT.BARN.FLOOR_Y / LAYOUT.CANVAS.REF_HEIGHT) * ch);
+    const wallTop = skyHeight;
+    const wallHeight = Math.max(96, floorTop - wallTop);
+    this.wallTile.setPosition(0, wallTop).setSize(cw, wallHeight);
 
     const rafterHeight = Math.max(30, Math.round((42 / LAYOUT.CANVAS.REF_HEIGHT) * ch));
     this.rafter.setPosition(0, 0).setDisplaySize(cw, rafterHeight);
 
-    const floorTop = Math.round((LAYOUT.BARN.FLOOR_Y / LAYOUT.CANVAS.REF_HEIGHT) * ch);
     const floorHeight = Math.max(
       80,
       Math.round((LAYOUT.BARN.FLOOR_HEIGHT / LAYOUT.CANVAS.REF_HEIGHT) * ch),
     );
-    this.floorStraw.setPosition(0, floorTop).setDisplaySize(cw, floorHeight);
+    this.floorStraw.setPosition(0, floorTop).setSize(cw, floorHeight);
+    this.vignette.setPosition(cw / 2, ch / 2).setDisplaySize(cw, ch);
 
     this.farmhouseImage
       .setPosition(farmhouseRect.x, farmhouseRect.y)
       .setDisplaySize(farmhouseRect.w, farmhouseRect.h);
+    this.farmhouseShadow
+      .setPosition(
+        farmhouseRect.x + farmhouseRect.w * 0.56,
+        farmhouseRect.y + farmhouseRect.h * 0.94,
+      )
+      .setSize(farmhouseRect.w * 0.92, farmhouseRect.h * 0.22);
     this.windowGlow
       .setPosition(windowRect.x, windowRect.y)
       .setDisplaySize(windowRect.w, windowRect.h);
     this.deckStack.setPosition(deckRect.x, deckRect.y).setDisplaySize(deckRect.w, deckRect.h);
+    this.deckShadow
+      .setPosition(deckRect.x + deckRect.w * 0.5, deckRect.y + deckRect.h * 0.88)
+      .setSize(deckRect.w * 0.9, deckRect.h * 0.24);
     this.deckCountText
       .setPosition(deckRect.x + deckRect.w / 2, deckRect.y + deckRect.h / 2)
-      .setStyle({ fontSize: this.fontPx(16, ch) });
+      .setFontSize(this.fontPx(14, ch));
+
+    if (this.deckFloatTween) {
+      this.deckFloatTween.remove();
+    }
+    this.deckStack.setY(deckRect.y);
+    this.deckFloatTween = this.tweens.add({
+      targets: this.deckStack,
+      y: { from: deckRect.y - 2, to: deckRect.y + 2 },
+      duration: 3000,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut',
+    });
 
     this.slotImages.forEach((slotImage, index) => {
       const slot = slotRects[index];
@@ -576,34 +816,49 @@ export class BarnScene extends Phaser.Scene {
       container.setScale(slot.w / baseW, slot.h / baseH);
     });
 
+    this.cardShadows.forEach((shadow, index) => {
+      const slot = slotRects[index];
+      if (!slot) {
+        shadow.setVisible(false);
+        return;
+      }
+      shadow
+        .setVisible(true)
+        .setPosition(slot.x + Math.round(slot.w * 0.03), slot.y + Math.round(slot.h * 0.04))
+        .setDisplaySize(slot.w, slot.h);
+
+      const shimmer = this.cardContainers[index]?.getData('shimmerEmitter') as
+        | Phaser.GameObjects.Particles.ParticleEmitter
+        | undefined;
+      if (shimmer) {
+        shimmer.setPosition(slot.x + slot.w / 2, slot.y + slot.h / 2);
+      }
+    });
+
     const labelOffsetX = Math.round((120 / LAYOUT.CANVAS.REF_WIDTH) * cw);
     const legendaryOffsetX = Math.round((260 / LAYOUT.CANVAS.REF_WIDTH) * cw);
     const hayOffsetY = Math.round((20 / LAYOUT.CANVAS.REF_HEIGHT) * ch);
     const capacityOffsetY = Math.round((28 / LAYOUT.CANVAS.REF_HEIGHT) * ch);
     const pennedOffsetY = Math.round((42 / LAYOUT.CANVAS.REF_HEIGHT) * ch);
 
-    this.nightText
-      .setPosition(bannerRect.x, bannerRect.y)
-      .setStyle({ fontSize: this.fontPx(18, ch) });
+    this.nightText.setPosition(bannerRect.x, bannerRect.y).setFontSize(this.fontPx(14, ch));
     this.mischiefText
       .setPosition(bannerRect.x + labelOffsetX, bannerRect.y)
-      .setStyle({ fontSize: this.fontPx(14, ch) });
+      .setFontSize(this.fontPx(12, ch));
     this.hayText
       .setPosition(bannerRect.x + labelOffsetX, bannerRect.y + hayOffsetY)
-      .setStyle({ fontSize: this.fontPx(14, ch) });
+      .setFontSize(this.fontPx(12, ch));
     this.legendaryText
       .setPosition(bannerRect.x + legendaryOffsetX, bannerRect.y)
-      .setStyle({ fontSize: this.fontPx(12, ch) });
+      .setFontSize(this.fontPx(10, ch));
     this.capacityText
       .setPosition(bannerRect.x, bannerRect.y + capacityOffsetY)
-      .setStyle({ fontSize: this.fontPx(14, ch) });
+      .setFontSize(this.fontPx(12, ch));
     this.pennedUpText
       .setPosition(bannerRect.x + labelOffsetX, bannerRect.y + pennedOffsetY)
-      .setStyle({ fontSize: this.fontPx(12, ch) });
+      .setFontSize(this.fontPx(10, ch));
 
-    this.noiseLabel
-      .setPosition(noiseRect.x, noiseRect.y)
-      .setStyle({ fontSize: this.fontPx(14, ch) });
+    this.noiseLabel.setPosition(noiseRect.x, noiseRect.y).setFontSize(this.fontPx(12, ch));
     const dotSize = Math.max(14, Math.round((18 / LAYOUT.CANVAS.REF_HEIGHT) * ch));
     const dotStartX = Math.round((60 / LAYOUT.CANVAS.REF_WIDTH) * cw);
     const dotGap = Math.max(18, Math.round((28 / LAYOUT.CANVAS.REF_WIDTH) * cw));
@@ -613,6 +868,20 @@ export class BarnScene extends Phaser.Scene {
         .setPosition(noiseRect.x + dotStartX + index * dotGap, noiseRect.y + dotOffsetY)
         .setDisplaySize(dotSize, dotSize);
     });
+
+    if (this.dustEmitter) {
+      const dustY = skyHeight + 8;
+      const dustH = Math.max(40, floorTop + floorHeight - dustY - 8);
+      this.dustEmitter.clearEmitZones();
+      this.dustEmitter.addEmitZone({
+        type: 'random',
+        source: new Phaser.Geom.Rectangle(0, dustY, cw, dustH),
+      } as Phaser.Types.GameObjects.Particles.ParticleEmitterRandomZoneConfig);
+    }
+
+    if (this.warningEmitter) {
+      this.warningEmitter.setPosition(noiseRect.x + 96, noiseRect.y + 8);
+    }
 
     this.updateActionButtonsLayout(capacity, cw, ch);
     if (!this.actionBarVisible) {
@@ -670,6 +939,25 @@ export class BarnScene extends Phaser.Scene {
   private shutdown(): void {
     this.scale.off('resize', this.handleResize, this);
     this.pendingResize = null;
+    this.longPressTimer?.destroy();
+    this.longPressTimer = null;
+
+    this.windowGlowTween?.remove();
+    this.windowGlowTween = null;
+    this.deckFloatTween?.remove();
+    this.deckFloatTween = null;
+
+    this.dustEmitter?.destroy();
+    this.dustEmitter = null;
+    this.warningEmitter?.destroy();
+    this.warningEmitter = null;
+
+    this.cardContainers.forEach((container) => {
+      const shimmer = container?.getData('shimmerEmitter') as
+        | Phaser.GameObjects.Particles.ParticleEmitter
+        | undefined;
+      shimmer?.destroy();
+    });
   }
 
   // === Draw handler ===
@@ -841,7 +1129,26 @@ export class BarnScene extends Phaser.Scene {
 
     const animalDef = getAnimalDef(card.animalId);
     const ability = ABILITY_REGISTRY[animalDef.abilityKind];
-    const container = this.add.container(slot.x, slot.y);
+
+    if (this.cardShadows[slotIndex]) {
+      this.cardShadows[slotIndex].destroy();
+    }
+    if (this.cardContainers[slotIndex]) {
+      this.cardContainers[slotIndex].destroy();
+    }
+
+    const shadow = this.add
+      .image(
+        slot.x + Math.round(slot.w * 0.03),
+        slot.y + Math.round(slot.h * 0.04),
+        TEXTURES.CARD_SHADOW,
+      )
+      .setOrigin(0)
+      .setDisplaySize(slot.w, slot.h)
+      .setDepth(DEPTH.CARD_SHADOWS);
+    this.cardShadows[slotIndex] = shadow;
+
+    const container = this.add.container(slot.x, slot.y).setDepth(DEPTH.CARDS);
 
     // Card background based on tier
     let cardBgTexture: string;
@@ -863,14 +1170,13 @@ export class BarnScene extends Phaser.Scene {
         .setOrigin(0)
         .setDisplaySize(slot.w, stripeHeight);
       container.add(stripe);
-      const noisyLabel = this.add
-        .text(slot.w / 2, stripeHeight / 2, 'NOISY!', {
-          fontFamily: 'monospace',
-          fontSize: this.fontPx(10, ch),
-          fontStyle: 'bold',
-          color: '#ffffff',
-        })
-        .setOrigin(0.5);
+      const noisyLabel = this.addBitmapText(
+        slot.w / 2,
+        stripeHeight / 2,
+        'NOISY!',
+        this.fontPx(10, ch),
+        0xffffff,
+      ).setOrigin(0.5);
       container.add(noisyLabel);
     }
 
@@ -884,14 +1190,15 @@ export class BarnScene extends Phaser.Scene {
 
     // Name strip at bottom (h=20)
     const nameY = slot.h - 10;
-    const nameText = this.add
-      .text(slot.w / 2, nameY, animalDef.name, {
-        ...TEXT_STYLE_DARK,
-        fontSize: this.fontPx(11, ch),
-        fontStyle: 'bold',
-        wordWrap: { width: slot.w - 8 },
-      })
-      .setOrigin(0.5);
+    const nameText = this.addBitmapText(
+      slot.w / 2,
+      nameY,
+      animalDef.name,
+      this.fontPx(10, ch),
+      TEXT_DARK_TINT,
+    )
+      .setOrigin(0.5)
+      .setMaxWidth(slot.w - 8);
     container.add(nameText);
 
     // Resource badges (32px, gold for Mischief top-left, green for Hay top-right)
@@ -906,11 +1213,14 @@ export class BarnScene extends Phaser.Scene {
         .setDisplaySize(badgeSize, badgeSize);
       container.add(badge);
       const val = this.add
-        .text(Math.round((20 / 96) * slot.w), badgeY + badgeSize / 2, `${animalDef.mischief}`, {
-          ...TEXT_STYLE_DARK,
-          fontSize: this.fontPx(14, ch),
-          fontStyle: 'bold',
-        })
+        .bitmapText(
+          Math.round((20 / 96) * slot.w),
+          badgeY + badgeSize / 2,
+          'pixel-font',
+          `${animalDef.mischief}`,
+          this.fontPx(12, ch),
+        )
+        .setTint(TEXT_DARK_TINT)
         .setOrigin(0.5);
       container.add(val);
     }
@@ -922,11 +1232,14 @@ export class BarnScene extends Phaser.Scene {
         .setDisplaySize(badgeSize, badgeSize);
       container.add(badge);
       const val = this.add
-        .text(slot.w - Math.round((20 / 96) * slot.w), badgeY + badgeSize / 2, `${animalDef.hay}`, {
-          ...TEXT_STYLE_DARK,
-          fontSize: this.fontPx(14, ch),
-          fontStyle: 'bold',
-        })
+        .bitmapText(
+          slot.w - Math.round((20 / 96) * slot.w),
+          badgeY + badgeSize / 2,
+          'pixel-font',
+          `${animalDef.hay}`,
+          this.fontPx(12, ch),
+        )
+        .setTint(TEXT_DARK_TINT)
         .setOrigin(0.5);
       container.add(val);
     }
@@ -934,27 +1247,26 @@ export class BarnScene extends Phaser.Scene {
     // Ability keyword chip at bottom of card
     if (ability.kind !== 'none' && ability.label) {
       let chipTexture: string;
-      let chipTextColor = '#ffffff';
+      let chipTextColor = 0xffffff;
       if (ability.trigger === 'on_enter' || ability.trigger === 'manual') {
         chipTexture = TEXTURES.ABILITY_STRIP_ACTIVE;
       } else if (ability.trigger === 'passive') {
         chipTexture = TEXTURES.ABILITY_STRIP_PASSIVE;
       } else {
         chipTexture = TEXTURES.ABILITY_STRIP_TRIGGERED;
-        chipTextColor = PALETTE.TEXT_DARK;
+        chipTextColor = TEXT_DARK_TINT;
       }
       const chipY = slot.h - Math.round((24 / 104) * slot.h);
       const chipH = Math.max(12, Math.round((14 / 104) * slot.h));
       const chip = this.add.image(0, chipY, chipTexture).setOrigin(0).setDisplaySize(slot.w, chipH);
       container.add(chip);
-      const chipLabel = this.add
-        .text(slot.w / 2, chipY + chipH / 2, ability.label.toUpperCase(), {
-          fontFamily: 'monospace',
-          fontSize: this.fontPx(9, ch),
-          fontStyle: 'bold',
-          color: chipTextColor,
-        })
-        .setOrigin(0.5);
+      const chipLabel = this.addBitmapText(
+        slot.w / 2,
+        chipY + chipH / 2,
+        ability.label.toUpperCase(),
+        this.fontPx(9, ch),
+        chipTextColor,
+      ).setOrigin(0.5);
       container.add(chipLabel);
     }
 
@@ -974,28 +1286,44 @@ export class BarnScene extends Phaser.Scene {
       // Animated gold border glow
       const glowBorder = this.add
         .rectangle(slot.w / 2, slot.h / 2, slot.w + 4, slot.h + 4)
-        .setStrokeStyle(2, PALETTE.LEGENDARY_BORDER, 0.35);
+        .setStrokeStyle(2, PALETTE.LEGENDARY_BORDER, 0.4);
       container.addAt(glowBorder, 0);
       this.tweens.add({
         targets: glowBorder,
-        alpha: { from: 0.35, to: 0.8 },
+        alpha: { from: 0.4, to: 0.9 },
         duration: ANIMATION.LEGENDARY_GLOW_MS,
         yoyo: true,
         repeat: -1,
         ease: 'Sine.easeInOut',
       });
+
+      const shimmerEmitter = this.add
+        .particles(slot.x + slot.w / 2, slot.y + slot.h / 2, TEXTURES.FX_SPARK, {
+          speedX: { min: -8, max: 8 },
+          speedY: { min: -14, max: -4 },
+          lifespan: { min: 600, max: 1000 },
+          scale: { start: 0.45, end: 0 },
+          alpha: { start: 0.95, end: 0 },
+          frequency: 160,
+          quantity: 1,
+          tint: [0xfde7a3, PALETTE.GOLD_SPARKLE, 0xfff4da],
+          maxAliveParticles: 10,
+          x: { min: slot.x + 2, max: slot.x + slot.w - 2 },
+          y: { min: slot.y + 2, max: slot.y + slot.h - 2 },
+        })
+        .setDepth(DEPTH.LEGENDARY_FX);
+      container.setData('shimmerEmitter', shimmerEmitter);
     }
 
     // Manual ability indicator (tap indicator for unused manual abilities)
     if (ability.trigger === 'manual' && !card.abilityUsed && !this.isAnimating) {
-      const tapIndicator = this.add
-        .text(slot.w / 2, slot.h - Math.round((38 / 104) * slot.h), 'TAP', {
-          fontFamily: 'monospace',
-          fontSize: this.fontPx(8, ch),
-          fontStyle: 'bold',
-          color: '#ffd700',
-        })
-        .setOrigin(0.5);
+      const tapIndicator = this.addBitmapText(
+        slot.w / 2,
+        slot.h - Math.round((38 / 104) * slot.h),
+        'TAP',
+        this.fontPx(8, ch),
+        PALETTE.LEGENDARY_BORDER,
+      ).setOrigin(0.5);
       container.add(tapIndicator);
     }
 
@@ -1037,11 +1365,13 @@ export class BarnScene extends Phaser.Scene {
     if (animated) {
       container.setScale(0.5);
       container.setAlpha(0);
+      shadow.setAlpha(0);
     }
 
+    container.setData('slotIndex', slotIndex);
     container.setData('slotW', slot.w);
     container.setData('slotH', slot.h);
-    this.cardContainers.push(container);
+    this.cardContainers[slotIndex] = container;
     return container;
   }
 
@@ -1114,7 +1444,7 @@ export class BarnScene extends Phaser.Scene {
     if (animalDef.tier === 'legendary') {
       const tierBadge = this.add
         .text(110 * sx, 40 * sy, 'LEGENDARY', {
-          fontFamily: 'monospace',
+          fontFamily: 'sans-serif',
           fontSize: this.fontPx(10, ch),
           fontStyle: 'bold',
           color: '#ffd700',
@@ -1480,9 +1810,14 @@ export class BarnScene extends Phaser.Scene {
     const decision = night.pendingDecision;
 
     const overlay = this.add.container(0, 0);
+    overlay.setDepth(DEPTH.OVERLAYS);
 
     // Semi-transparent background
-    const bg = this.add.rectangle(0, 0, cw, ch, 0x000000, 0.6).setOrigin(0).setInteractive();
+    const bg = this.add
+      .tileSprite(0, 0, cw, ch, TEXTURES.OVERLAY_BG)
+      .setOrigin(0)
+      .setAlpha(0.88)
+      .setInteractive();
     overlay.add(bg);
 
     // Title
@@ -1639,9 +1974,20 @@ export class BarnScene extends Phaser.Scene {
   private rebuildBarnDisplay(session: GameSession): void {
     // Destroy existing card containers
     for (const container of this.cardContainers) {
+      if (!container) {
+        continue;
+      }
+      const shimmer = container?.getData('shimmerEmitter') as
+        | Phaser.GameObjects.Particles.ParticleEmitter
+        | undefined;
+      shimmer?.destroy();
       container.destroy();
     }
+    for (const shadow of this.cardShadows) {
+      shadow?.destroy();
+    }
     this.cardContainers = [];
+    this.cardShadows = [];
 
     const night = session.currentNight;
     if (!night) return;
@@ -1671,30 +2017,77 @@ export class BarnScene extends Phaser.Scene {
       }
 
       const deckPos = getDeckStackPosition(state.capacity, cw, ch);
+      const container = this.renderCardInSlot(card, slotIndex, false);
+      const shadow = this.cardShadows[slotIndex];
+      container.setAlpha(0);
+      shadow?.setAlpha(0);
 
-      const container = this.renderCardInSlot(card, slotIndex, true);
-      container.setPosition(deckPos.x, deckPos.y);
-      container.setAlpha(1);
-      container.setScale(0.5);
+      const flyBack = this.add
+        .image(deckPos.x, deckPos.y, TEXTURES.DECK_BACK)
+        .setOrigin(0)
+        .setDisplaySize(deckPos.w, deckPos.h)
+        .setDepth(DEPTH.CARDS + 1);
 
       this.tweens.add({
-        targets: container,
+        targets: flyBack,
         x: slot.x,
         y: slot.y,
-        scale: 1,
+        displayWidth: slot.w,
+        displayHeight: slot.h,
         duration: ANIMATION.DRAW_SLIDE_MS,
-        ease: 'Back.easeOut',
+        ease: 'Cubic.Out',
         onComplete: () => {
+          if (!this.scene.isActive()) {
+            flyBack.destroy();
+            resolve();
+            return;
+          }
+
           this.tweens.add({
-            targets: container,
-            scale: 1.08,
-            duration: ANIMATION.STAT_POP_MS / 2,
-            yoyo: true,
-            ease: 'Quad.easeInOut',
+            targets: flyBack,
+            scaleX: 0,
+            duration: 70,
+            ease: 'Quad.In',
             onComplete: () => {
-              this.updateDeckCount();
-              this.updateCapacityText();
-              resolve();
+              if (!this.scene.isActive()) {
+                flyBack.destroy();
+                resolve();
+                return;
+              }
+
+              flyBack.destroy();
+              container.setAlpha(1);
+              container.setScale(1, 1);
+              container.setScale(0, 1);
+              shadow?.setAlpha(1);
+
+              this.tweens.add({
+                targets: container,
+                scaleX: 1,
+                duration: 70,
+                ease: 'Quad.Out',
+                onComplete: () => {
+                  if (!this.scene.isActive()) {
+                    resolve();
+                    return;
+                  }
+
+                  this.tweens.add({
+                    targets: container,
+                    scaleX: 1.08,
+                    scaleY: 1.08,
+                    duration: 120,
+                    yoyo: true,
+                    ease: 'Back.Out',
+                    onComplete: () => {
+                      this.emitCardLandingFx(slot);
+                      this.updateDeckCount();
+                      this.updateCapacityText();
+                      resolve();
+                    },
+                  });
+                },
+              });
             },
           });
         },
@@ -1702,13 +2095,104 @@ export class BarnScene extends Phaser.Scene {
     });
   }
 
+  private emitCardLandingFx(slot: Rect): void {
+    const flash = this.add
+      .rectangle(slot.x + slot.w / 2, slot.y + slot.h / 2, slot.w, slot.h, 0xffffff, 0.45)
+      .setDepth(DEPTH.CARDS + 1);
+    this.tweens.add({
+      targets: flash,
+      alpha: 0,
+      duration: 140,
+      onComplete: () => flash.destroy(),
+    });
+
+    const cx = slot.x + slot.w / 2;
+    const cy = slot.y + slot.h / 2;
+    const puff = this.add
+      .particles(cx, cy, TEXTURES.FX_PUFF, {
+        angle: { min: 200, max: 340 },
+        speed: { min: 20, max: 95 },
+        gravityY: 90,
+        lifespan: { min: 280, max: 420 },
+        alpha: { start: 0.7, end: 0 },
+        scale: { start: 0.7, end: 0 },
+        quantity: 8,
+        frequency: -1,
+        tint: [PALETTE.STRAW_HIGHLIGHT, PALETTE.STRAW, PALETTE.STRAW_SHADOW],
+        maxAliveParticles: 22,
+      })
+      .setDepth(DEPTH.LEGENDARY_FX);
+    puff.explode(8, cx, cy);
+
+    const chaff = this.add
+      .particles(cx, cy, TEXTURES.FX_CHAFF, {
+        angle: { min: 200, max: 340 },
+        speed: { min: 20, max: 95 },
+        gravityY: 90,
+        lifespan: { min: 280, max: 420 },
+        alpha: { start: 0.7, end: 0 },
+        scale: { start: 0.7, end: 0 },
+        quantity: 14,
+        frequency: -1,
+        tint: [PALETTE.STRAW_HIGHLIGHT, PALETTE.STRAW_DARK, PALETTE.STRAW_SHADOW],
+        maxAliveParticles: 22,
+      })
+      .setDepth(DEPTH.LEGENDARY_FX);
+    chaff.explode(14, cx, cy);
+
+    this.time.delayedCall(600, () => {
+      puff.destroy();
+      chaff.destroy();
+    });
+  }
+
   private animateBust(message: string): Promise<void> {
     return new Promise<void>((resolve) => {
+      const { cw, ch } = this.getCanvasSize();
+      const cx = cw / 2;
+      const cy = ch / 2;
+      const sparks = this.add
+        .particles(cx, cy, TEXTURES.FX_SPARK, {
+          angle: { min: 0, max: 360 },
+          speed: { min: 70, max: 170 },
+          gravityY: 220,
+          lifespan: { min: 300, max: 650 },
+          alpha: { start: 0.9, end: 0 },
+          scale: { start: 0.8, end: 0 },
+          quantity: 28,
+          frequency: -1,
+          tint: [PALETTE.SPARK_ORANGE, PALETTE.SPARK_RED, PALETTE.PARCHMENT],
+          maxAliveParticles: 38,
+        })
+        .setDepth(DEPTH.OVERLAY_PARTICLES);
+      sparks.explode(28, cx, cy);
+
+      const dust = this.add
+        .particles(cx, cy, TEXTURES.FX_PUFF, {
+          angle: { min: 0, max: 360 },
+          speed: { min: 70, max: 170 },
+          gravityY: 220,
+          lifespan: { min: 300, max: 650 },
+          alpha: { start: 0.9, end: 0 },
+          scale: { start: 0.8, end: 0 },
+          quantity: 10,
+          frequency: -1,
+          tint: [PALETTE.PARCHMENT, PALETTE.DUSTY_ROSE, PALETTE.STRAW_SHADOW],
+          maxAliveParticles: 38,
+        })
+        .setDepth(DEPTH.OVERLAY_PARTICLES);
+      dust.explode(10, cx, cy);
+
       this.cameras.main.shake(ANIMATION.BUST_SHAKE_MS, 0.01);
 
       this.time.delayedCall(ANIMATION.BUST_SHAKE_MS, () => {
         this.showBustOverlay(message);
         resolve();
+      });
+
+      this.time.delayedCall(800, () => {
+        sparks.destroy();
+        dust.destroy();
       });
     });
   }
@@ -1717,31 +2201,69 @@ export class BarnScene extends Phaser.Scene {
 
   private updateNoiseMeter(noisyCount: number): void {
     for (let i = 0; i < 3; i++) {
+      const dot = this.noiseDots[i];
+      const wasFilled = dot.texture.key === TEXTURES.NOISE_DOT_FILLED;
+      const nextFilled = i < noisyCount;
       const texture = i < noisyCount ? TEXTURES.NOISE_DOT_FILLED : TEXTURES.NOISE_DOT_EMPTY;
-      this.noiseDots[i].setTexture(texture);
+      dot.setTexture(texture);
+      if (nextFilled && !wasFilled) {
+        dot.setScale(0);
+        this.tweens.add({
+          targets: dot,
+          scaleX: 1,
+          scaleY: 1,
+          duration: 160,
+          ease: 'Back.Out',
+        });
+      } else if (!nextFilled) {
+        dot.setScale(1);
+      }
     }
   }
 
   // === Window glow ===
 
   private startWindowGlow(): void {
-    if (this.windowGlowTween) return;
-    this.windowGlow.setAlpha(0.3);
-    this.windowGlowTween = this.tweens.add({
-      targets: this.windowGlow,
-      alpha: 0.8,
-      duration: ANIMATION.WARNING_GLOW_MS,
-      yoyo: true,
-      repeat: -1,
-      ease: 'Sine.easeInOut',
-    });
+    if (!this.windowGlowTween) {
+      this.windowGlow.setAlpha(0.3);
+      this.windowGlowTween = this.tweens.add({
+        targets: this.windowGlow,
+        alpha: 0.8,
+        duration: 1800,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.easeInOut',
+      });
+    }
+
+    if (!this.warningEmitter) {
+      const { cw, ch } = this.getCanvasSize();
+      const state = gameStore.getState();
+      const noiseRect = getNoiseMeterPosition(state.capacity, cw, ch);
+      this.warningEmitter = this.add
+        .particles(noiseRect.x + 96, noiseRect.y + 8, TEXTURES.FX_SPARK, {
+          angle: { min: 230, max: 310 },
+          speed: { min: 30, max: 110 },
+          gravityY: 160,
+          lifespan: { min: 260, max: 520 },
+          alpha: { start: 0.8, end: 0 },
+          scale: { start: 0.5, end: 0 },
+          frequency: 90,
+          quantity: 2,
+          tint: [PALETTE.WARNING, PALETTE.SPARK_ORANGE, PALETTE.BUST],
+          maxAliveParticles: 16,
+        })
+        .setDepth(DEPTH.LEGENDARY_FX);
+    }
   }
 
   private stopWindowGlow(): void {
     if (this.windowGlowTween) {
-      this.windowGlowTween.destroy();
+      this.windowGlowTween.remove();
       this.windowGlowTween = null;
     }
+    this.warningEmitter?.destroy();
+    this.warningEmitter = null;
     this.windowGlow.setAlpha(0);
   }
 
@@ -1749,11 +2271,38 @@ export class BarnScene extends Phaser.Scene {
 
   private updateHud(session: GameSession): void {
     const night = session.currentNight;
+    const deckRemaining = night ? night.deck.length : 0;
+    const barnCount = night ? night.barn.length : 0;
+    const previous = this.previousHudValues;
+
     this.mischiefText.setText(`Mischief: ${session.mischief}`);
     this.hayText.setText(`Hay: ${session.hay}`);
     this.legendaryText.setText(`Legendary: ${night?.legendaryCount ?? 0}/3`);
-    this.updateDeckCount();
-    this.updateCapacityText();
+    this.deckCountText.setText(`${deckRemaining}`);
+    this.capacityText.setText(`Barn: ${barnCount}/${session.capacity}`);
+
+    if (previous) {
+      if (previous.mischief !== session.mischief) {
+        this.pulseNumericText(this.mischiefText);
+      }
+      if (previous.hay !== session.hay) {
+        this.pulseNumericText(this.hayText);
+      }
+      if (previous.deck !== deckRemaining) {
+        this.pulseNumericText(this.deckCountText);
+      }
+      if (previous.barn !== barnCount) {
+        this.pulseNumericText(this.capacityText);
+      }
+    }
+
+    this.previousHudValues = {
+      mischief: session.mischief,
+      hay: session.hay,
+      deck: deckRemaining,
+      barn: barnCount,
+    };
+
     this.updatePennedUpIndicator(session);
     setDomAttr('data-noisy-count', `${night?.noisyCount ?? 0}`);
   }
@@ -1803,21 +2352,23 @@ export class BarnScene extends Phaser.Scene {
     const { cw, ch } = this.getCanvasSize();
     const bounds = getOverlayBounds(state.capacity, cw, ch);
     const overlay = this.add.container(bounds.x, bounds.y);
+    overlay.setDepth(DEPTH.OVERLAYS);
     overlay.setData('baseW', bounds.w);
     overlay.setData('baseH', bounds.h);
 
-    const bg = this.add.rectangle(0, 0, bounds.w, bounds.h, 0x000000, 0.75).setOrigin(0);
+    const bg = this.add
+      .tileSprite(0, 0, bounds.w, bounds.h, TEXTURES.OVERLAY_BG)
+      .setOrigin(0)
+      .setAlpha(0.92);
     overlay.add(bg);
 
-    const bustText = this.add
-      .text(bounds.w / 2, bounds.h / 2 - 40, message, {
-        fontFamily: 'monospace',
-        fontSize: this.fontPx(28, ch),
-        fontStyle: 'bold',
-        color: '#d94b3d',
-        align: 'center',
-      })
-      .setOrigin(0.5);
+    const bustText = this.addBitmapText(
+      bounds.w / 2,
+      bounds.h / 2 - 40,
+      message,
+      this.fontPx(21, ch),
+      PALETTE.BUST,
+    ).setOrigin(0.5);
     overlay.add(bustText);
 
     const btnW = Math.min(260, Math.round(bounds.w * 0.58));
@@ -1832,14 +2383,14 @@ export class BarnScene extends Phaser.Scene {
       .setInteractive();
     overlay.add(continueBtn);
 
-    const continueText = this.add
-      .text(btnX + btnW / 2, btnY + btnH / 2, 'Continue', {
-        ...TEXT_STYLE_LIGHT,
-        fontSize: this.fontPx(18, ch),
-        fontStyle: 'bold',
-      })
-      .setOrigin(0.5);
+    const continueText = this.addBitmapText(
+      btnX + btnW / 2,
+      btnY + btnH / 2,
+      'Continue',
+      this.fontPx(14, ch),
+    ).setOrigin(0.5);
     overlay.add(continueText);
+    this.addButtonPressFeedback(continueBtn, continueText);
 
     continueBtn.on(
       'pointerdown',
@@ -1886,22 +2437,22 @@ export class BarnScene extends Phaser.Scene {
     );
 
     const overlay = this.add.container(0, ch);
+    overlay.setDepth(DEPTH.OVERLAYS);
     overlay.setData('baseW', cw);
     overlay.setData('baseH', ch);
     overlay.setData('raised', false);
 
-    const bg = this.add.rectangle(0, 0, cw, ch, 0x000000, 0.85).setOrigin(0);
+    const bg = this.add.tileSprite(0, 0, cw, ch, TEXTURES.OVERLAY_BG).setOrigin(0).setAlpha(0.92);
     overlay.add(bg);
 
     // YOU WIN! text
-    const winText = this.add
-      .text(cw / 2, Math.round((200 / LAYOUT.CANVAS.REF_HEIGHT) * ch), 'YOU WIN!', {
-        fontFamily: 'monospace',
-        fontSize: this.fontPx(32, ch),
-        fontStyle: 'bold',
-        color: '#ffd700',
-      })
-      .setOrigin(0.5);
+    const winText = this.addBitmapText(
+      cw / 2,
+      Math.round((200 / LAYOUT.CANVAS.REF_HEIGHT) * ch),
+      'YOU WIN!',
+      this.fontPx(21, ch),
+      PALETTE.GOLD_SPARKLE,
+    ).setOrigin(0.5);
     overlay.add(winText);
 
     // Display Legendary sprites
@@ -1920,16 +2471,14 @@ export class BarnScene extends Phaser.Scene {
           .setScale(Math.max(2.2, (3 * ch) / LAYOUT.CANVAS.REF_HEIGHT));
         overlay.add(sprite);
         const name = this.add
-          .text(
+          .bitmapText(
             x,
             Math.round((390 / LAYOUT.CANVAS.REF_HEIGHT) * ch),
+            'pixel-font',
             getAnimalDef(card.animalId).name,
-            {
-              ...TEXT_STYLE_LIGHT,
-              fontSize: this.fontPx(11, ch),
-              fontStyle: 'bold',
-            },
+            this.fontPx(10, ch),
           )
+          .setTint(TEXT_LIGHT_TINT)
           .setOrigin(0.5);
         overlay.add(name);
       });
@@ -1964,14 +2513,14 @@ export class BarnScene extends Phaser.Scene {
       .setInteractive();
     overlay.add(playAgainBtn);
 
-    const playAgainText = this.add
-      .text(btnX + btnW / 2, btnY + btnH / 2, 'Play Again', {
-        ...TEXT_STYLE_LIGHT,
-        fontSize: this.fontPx(18, ch),
-        fontStyle: 'bold',
-      })
-      .setOrigin(0.5);
+    const playAgainText = this.addBitmapText(
+      btnX + btnW / 2,
+      btnY + btnH / 2,
+      'Play Again',
+      this.fontPx(14, ch),
+    ).setOrigin(0.5);
     overlay.add(playAgainText);
+    this.addButtonPressFeedback(playAgainBtn, playAgainText);
 
     playAgainBtn.on('pointerdown', () => {
       gameStore.reset();
@@ -2000,20 +2549,21 @@ export class BarnScene extends Phaser.Scene {
     const { cw, ch } = this.getCanvasSize();
     const bounds = getOverlayBounds(session.capacity, cw, ch);
     const overlay = this.add.container(bounds.x, bounds.y);
+    overlay.setDepth(DEPTH.OVERLAYS);
     overlay.setData('baseW', bounds.w);
     overlay.setData('baseH', bounds.h);
 
-    const bg = this.add.rectangle(0, 0, bounds.w, bounds.h, 0x000000, 0.85).setOrigin(0);
+    const bg = this.add
+      .tileSprite(0, 0, bounds.w, bounds.h, TEXTURES.OVERLAY_BG)
+      .setOrigin(0)
+      .setAlpha(0.92);
     overlay.add(bg);
 
     const titleStr = summary.reason === 'bust' ? 'Night Summary (Bust!)' : 'Night Summary';
-    const title = this.add
-      .text(bounds.w / 2, 20, titleStr, {
-        ...TEXT_STYLE_LIGHT,
-        fontSize: this.fontPx(20, ch),
-        fontStyle: 'bold',
-      })
-      .setOrigin(0.5, 0);
+    const title = this.addBitmapText(bounds.w / 2, 20, titleStr, this.fontPx(14, ch)).setOrigin(
+      0.5,
+      0,
+    );
     overlay.add(title);
 
     const lineY = 60;
@@ -2021,11 +2571,22 @@ export class BarnScene extends Phaser.Scene {
 
     summary.lines.forEach((line: NightScoreLine, index: number) => {
       const y = lineY + index * lineHeight;
+      if (index % 2 === 0) {
+        const strip = this.add.rectangle(
+          bounds.w / 2,
+          y + lineHeight / 2,
+          bounds.w - 24,
+          lineHeight - 2,
+          0xffffff,
+          0.04,
+        );
+        overlay.add(strip);
+      }
       const mStr = line.mischief + (line.bonusMischief > 0 ? `+${line.bonusMischief}` : '');
       const lineText = this.add
         .text(20, y, `${line.name}  M:${mStr}  H:${line.hay}`, {
           ...TEXT_STYLE_LIGHT,
-          fontSize: this.fontPx(12, ch),
+          fontSize: this.fontCss(12, ch),
         })
         .setOrigin(0);
       overlay.add(lineText);
@@ -2062,7 +2623,7 @@ export class BarnScene extends Phaser.Scene {
     if (summary.penaltyMischief < 0) {
       const penaltyLine = this.add
         .text(20, totalsY + 40, `Penalty: ${summary.penaltyMischief}`, {
-          fontFamily: 'monospace',
+          fontFamily: 'sans-serif',
           fontSize: this.fontPx(13, ch),
           color: '#d94b3d',
         })
@@ -2096,7 +2657,7 @@ export class BarnScene extends Phaser.Scene {
     if (summary.hayUnpaid > 0) {
       const unpaidLine = this.add
         .text(20, totalMischiefY + 44, `Hay unpaid: ${summary.hayUnpaid}`, {
-          fontFamily: 'monospace',
+          fontFamily: 'sans-serif',
           fontSize: this.fontPx(12, ch),
           color: '#ffbe4d',
         })
@@ -2119,7 +2680,7 @@ export class BarnScene extends Phaser.Scene {
           overlay.add(lockImg);
           const pennedText = this.add
             .text(44, pennedY, `${pennedDef.name} penned up next night`, {
-              fontFamily: 'monospace',
+              fontFamily: 'sans-serif',
               fontSize: this.fontPx(12, ch),
               color: '#ffbe4d',
             })
@@ -2137,7 +2698,7 @@ export class BarnScene extends Phaser.Scene {
       overlay.add(lockImg);
       const pennedText = this.add
         .text(44, pennedY, `${pennedDef.name} penned up next night`, {
-          fontFamily: 'monospace',
+          fontFamily: 'sans-serif',
           fontSize: this.fontPx(12, ch),
           color: '#ffbe4d',
         })
@@ -2157,22 +2718,44 @@ export class BarnScene extends Phaser.Scene {
       .setInteractive();
     overlay.add(continueBtn);
 
-    const continueText = this.add
-      .text(btnX + btnW / 2, btnY + btnH / 2, 'Continue to Trading Post', {
-        ...TEXT_STYLE_LIGHT,
-        fontSize: this.fontPx(16, ch),
-        fontStyle: 'bold',
-      })
-      .setOrigin(0.5);
+    const continueText = this.addBitmapText(
+      btnX + btnW / 2,
+      btnY + btnH / 2,
+      'Continue to Trading Post',
+      this.fontPx(12, ch),
+    ).setOrigin(0.5);
     overlay.add(continueText);
+    this.addButtonPressFeedback(continueBtn, continueText);
 
     continueBtn.on(
       'pointerdown',
       () => {
-        this.scene.start(SceneKey.TradingPost);
+        this.transitionToScene(SceneKey.TradingPost);
       },
       this,
     );
+
+    if (summary.totalMischief > 0) {
+      const celebrate = this.add
+        .particles(bounds.x + bounds.w / 2, bounds.y + bounds.h * 0.5, TEXTURES.FX_SPARK, {
+          speedX: { min: -60, max: 60 },
+          speedY: { min: -180, max: -80 },
+          gravityY: 120,
+          lifespan: { min: 900, max: 1300 },
+          alpha: { start: 0.9, end: 0 },
+          scale: { start: 0.6, end: 0.1 },
+          quantity: 1,
+          frequency: 240,
+          tint: [PALETTE.GOLD_SPARKLE, PALETTE.PARCHMENT, PALETTE.DUSTY_ROSE],
+          maxAliveParticles: 36,
+        })
+        .setDepth(DEPTH.OVERLAY_PARTICLES);
+      celebrate.explode(36, bounds.x + bounds.w / 2, bounds.y + bounds.h * 0.74);
+      this.time.delayedCall(1200, () => {
+        celebrate.stop();
+        celebrate.destroy();
+      });
+    }
 
     this.summaryOverlay = overlay;
   }

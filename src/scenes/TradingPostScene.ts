@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { ANIMATION, PALETTE, TEXTURES } from '../config/constants';
+import { ANIMATION, PALETTE, TEXTURES, DEPTH } from '../config/constants';
 import * as gameStore from '../game/gameStore';
 import { getAnimalDef } from '../game/animals';
 import { ABILITY_REGISTRY } from '../game/abilities';
@@ -23,23 +23,21 @@ import {
   scaledShopFont,
 } from './tradingPostLayout';
 
-const TEXT_STYLE_BASE: Phaser.Types.GameObjects.Text.TextStyle = {
-  fontFamily: 'monospace',
-  color: PALETTE.TEXT_LIGHT,
-};
+const TEXT_LIGHT_TINT = 0xf8f3e5;
+const TEXT_DARK_TINT = 0x241611;
 
 interface ShopCardView {
   container: Phaser.GameObjects.Container;
   item: MarketItem;
   bg: Phaser.GameObjects.Image;
   sprite: Phaser.GameObjects.Image;
-  nameText: Phaser.GameObjects.Text;
+  nameText: Phaser.GameObjects.BitmapText;
   costBadge: Phaser.GameObjects.Image;
-  costText: Phaser.GameObjects.Text;
-  mischiefLabel: Phaser.GameObjects.Text;
-  hayLabel: Phaser.GameObjects.Text;
-  stockText: Phaser.GameObjects.Text;
-  abilityLabel: Phaser.GameObjects.Text | null;
+  costText: Phaser.GameObjects.BitmapText;
+  mischiefLabel: Phaser.GameObjects.BitmapText;
+  hayLabel: Phaser.GameObjects.BitmapText;
+  stockText: Phaser.GameObjects.BitmapText;
+  abilityLabel: Phaser.GameObjects.BitmapText | null;
   star: Phaser.GameObjects.Image | null;
 }
 
@@ -47,29 +45,31 @@ type ShopTab = 'animals' | 'legendary';
 
 export class TradingPostScene extends Phaser.Scene {
   private shopCards: ShopCardView[] = [];
-  private background!: Phaser.GameObjects.Rectangle;
-  private titleText!: Phaser.GameObjects.Text;
-  private nightText!: Phaser.GameObjects.Text;
+  private background!: Phaser.GameObjects.TileSprite;
+  private titleText!: Phaser.GameObjects.BitmapText;
+  private nightText!: Phaser.GameObjects.BitmapText;
+  private counterStrip!: Phaser.GameObjects.Rectangle;
+  private shelfShadow!: Phaser.GameObjects.Rectangle;
   private mischiefIcon!: Phaser.GameObjects.Image;
   private hayIcon!: Phaser.GameObjects.Image;
-  private mischiefText!: Phaser.GameObjects.Text;
-  private hayText!: Phaser.GameObjects.Text;
+  private mischiefText!: Phaser.GameObjects.BitmapText;
+  private hayText!: Phaser.GameObjects.BitmapText;
   private pennedUpContainer!: Phaser.GameObjects.Container;
   private pennedUpIcon!: Phaser.GameObjects.Image;
-  private pennedUpLabel!: Phaser.GameObjects.Text;
+  private pennedUpLabel!: Phaser.GameObjects.BitmapText;
   private capacityButton!: Phaser.GameObjects.Container;
   private capacityBtnBg!: Phaser.GameObjects.Image;
-  private capacityBtnText!: Phaser.GameObjects.Text;
+  private capacityBtnText!: Phaser.GameObjects.BitmapText;
   private startNightButton!: Phaser.GameObjects.Container;
   private startNightBtnBg!: Phaser.GameObjects.Image;
-  private startNightBtnText!: Phaser.GameObjects.Text;
+  private startNightBtnText!: Phaser.GameObjects.BitmapText;
   private activeTab: ShopTab = 'animals';
   private animalsTabBtn!: Phaser.GameObjects.Container;
   private legendaryTabBtn!: Phaser.GameObjects.Container;
   private animalsTabBg!: Phaser.GameObjects.Image;
   private legendaryTabBg!: Phaser.GameObjects.Image;
-  private animalsTabLabel!: Phaser.GameObjects.Text;
-  private legendaryTabLabel!: Phaser.GameObjects.Text;
+  private animalsTabLabel!: Phaser.GameObjects.BitmapText;
+  private legendaryTabLabel!: Phaser.GameObjects.BitmapText;
 
   constructor() {
     super(SceneKey.TradingPost);
@@ -82,15 +82,96 @@ export class TradingPostScene extends Phaser.Scene {
     };
   }
 
-  private fontPx(base: number, ch: number): string {
-    return `${scaledShopFont(base, ch)}px`;
+  private fontPx(base: number, ch: number): number {
+    return scaledShopFont(base, ch);
+  }
+
+  private fontCss(base: number, ch: number): string {
+    return `${this.fontPx(base, ch)}px`;
+  }
+
+  private addBitmapText(
+    x: number,
+    y: number,
+    text: string,
+    size: number,
+    tint = TEXT_LIGHT_TINT,
+  ): Phaser.GameObjects.BitmapText {
+    return this.add.bitmapText(x, y, 'pixel-font', text, size).setTint(tint);
+  }
+
+  private addButtonPressFeedback(
+    button: Phaser.GameObjects.Image,
+    label: Phaser.GameObjects.BitmapText,
+  ): void {
+    if (button.getData('feedback-bound') === true) {
+      return;
+    }
+    button.setData('feedback-bound', true);
+    button.setData('baseY', button.y);
+    label.setData('baseY', label.y);
+
+    button.on('pointerdown', () => {
+      if (!button.input?.enabled) {
+        return;
+      }
+      this.tweens.killTweensOf([button, label]);
+      const baseY = Number(button.getData('baseY')) || button.y;
+      const labelBaseY = Number(label.getData('baseY')) || label.y;
+      this.tweens.add({
+        targets: [button, label],
+        scaleX: 0.97,
+        scaleY: 0.97,
+        duration: 70,
+        ease: 'Quad.Out',
+      });
+      this.tweens.add({ targets: button, y: baseY + 2, duration: 70, ease: 'Quad.Out' });
+      this.tweens.add({ targets: label, y: labelBaseY + 2, duration: 70, ease: 'Quad.Out' });
+    });
+
+    const release = (): void => {
+      this.tweens.killTweensOf([button, label]);
+      const baseY = Number(button.getData('baseY')) || button.y;
+      const labelBaseY = Number(label.getData('baseY')) || label.y;
+      this.tweens.add({
+        targets: [button, label],
+        scaleX: 1,
+        scaleY: 1,
+        duration: 110,
+        ease: 'Back.Out',
+      });
+      this.tweens.add({ targets: button, y: baseY, duration: 110, ease: 'Back.Out' });
+      this.tweens.add({ targets: label, y: labelBaseY, duration: 110, ease: 'Back.Out' });
+    };
+
+    button.on('pointerup', release);
+    button.on('pointerout', release);
+  }
+
+  private transitionToBarn(): void {
+    if (this.cameras.main.fadeEffect?.isRunning) {
+      return;
+    }
+    this.cameras.main.once('camerafadeoutcomplete', () => {
+      this.scene.start(SceneKey.Barn);
+    });
+    this.cameras.main.fadeOut(ANIMATION.SCENE_FADE_MS, 0, 0, 0);
   }
 
   create(): void {
     this.activeTab = 'animals';
     const { cw, ch } = this.getCanvasSize();
 
-    this.background = this.add.rectangle(cw / 2, ch / 2, cw, ch, PALETTE.SHOP_BG).setOrigin(0.5);
+    this.background = this.add
+      .tileSprite(0, 0, cw, ch, TEXTURES.TRADING_POST_BG)
+      .setOrigin(0)
+      .setDepth(DEPTH.WALL);
+    this.shelfShadow = this.add
+      .rectangle(cw / 2, ch * 0.38, cw * 0.9, ch * 0.26, 0x000000, 0.2)
+      .setDepth(DEPTH.RAFTER);
+    this.counterStrip = this.add
+      .rectangle(cw / 2, ch * 0.76, cw, ch * 0.36, PALETTE.WARM_SHADOW, 0.36)
+      .setDepth(DEPTH.FLOOR);
 
     this.createHeader(cw, ch);
     this.createCurrencyDisplay(cw, ch);
@@ -104,26 +185,29 @@ export class TradingPostScene extends Phaser.Scene {
     this.scale.on('resize', this.handleResize, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.shutdown, this);
     this.applyLayout(cw, ch);
+    this.cameras.main.fadeIn(ANIMATION.SCENE_FADE_MS, 0, 0, 0);
   }
 
   private createHeader(cw: number, ch: number): void {
     const session = gameStore.getState();
 
-    this.titleText = this.add
-      .text(cw / 2, Math.round((80 / 844) * ch), 'Trading Post', {
-        ...TEXT_STYLE_BASE,
-        fontSize: this.fontPx(22, ch),
-        fontStyle: 'bold',
-      })
-      .setOrigin(0.5);
+    this.titleText = this.addBitmapText(
+      cw / 2,
+      Math.round((80 / 844) * ch),
+      'Trading Post',
+      this.fontPx(14, ch),
+    )
+      .setOrigin(0.5)
+      .setDepth(DEPTH.HUD);
 
-    this.nightText = this.add
-      .text(cw / 2, Math.round((106 / 844) * ch), `Night ${session.nightNumber}`, {
-        ...TEXT_STYLE_BASE,
-        fontSize: this.fontPx(14, ch),
-        fontStyle: 'bold',
-      })
-      .setOrigin(0.5);
+    this.nightText = this.addBitmapText(
+      cw / 2,
+      Math.round((106 / 844) * ch),
+      `Night ${session.nightNumber}`,
+      this.fontPx(12, ch),
+    )
+      .setOrigin(0.5)
+      .setDepth(DEPTH.HUD);
   }
 
   private createCurrencyDisplay(cw: number, ch: number): void {
@@ -132,25 +216,29 @@ export class TradingPostScene extends Phaser.Scene {
 
     this.mischiefIcon = this.add
       .image(pos.x, pos.y + pos.h / 2, TEXTURES.BADGE_MISCHIEF)
-      .setOrigin(0, 0.5);
-    this.mischiefText = this.add
-      .text(pos.x + 30, pos.y + pos.h / 2, String(session.mischief), {
-        ...TEXT_STYLE_BASE,
-        fontSize: this.fontPx(18, ch),
-        fontStyle: 'bold',
-      })
-      .setOrigin(0, 0.5);
+      .setOrigin(0, 0.5)
+      .setDepth(DEPTH.HUD);
+    this.mischiefText = this.addBitmapText(
+      pos.x + 30,
+      pos.y + pos.h / 2,
+      String(session.mischief),
+      this.fontPx(14, ch),
+    )
+      .setOrigin(0, 0.5)
+      .setDepth(DEPTH.HUD);
 
     this.hayIcon = this.add
       .image(pos.x + 120, pos.y + pos.h / 2, TEXTURES.BADGE_HAY)
-      .setOrigin(0, 0.5);
-    this.hayText = this.add
-      .text(pos.x + 150, pos.y + pos.h / 2, String(session.hay), {
-        ...TEXT_STYLE_BASE,
-        fontSize: this.fontPx(18, ch),
-        fontStyle: 'bold',
-      })
-      .setOrigin(0, 0.5);
+      .setOrigin(0, 0.5)
+      .setDepth(DEPTH.HUD);
+    this.hayText = this.addBitmapText(
+      pos.x + 150,
+      pos.y + pos.h / 2,
+      String(session.hay),
+      this.fontPx(14, ch),
+    )
+      .setOrigin(0, 0.5)
+      .setDepth(DEPTH.HUD);
   }
 
   private createPennedUpDisplay(cw: number, ch: number): void {
@@ -158,14 +246,13 @@ export class TradingPostScene extends Phaser.Scene {
     this.pennedUpContainer = this.add.container(pos.x, pos.y);
 
     this.pennedUpIcon = this.add.image(0, pos.h / 2, TEXTURES.LOCK_ICON).setOrigin(0, 0.5);
-    this.pennedUpLabel = this.add
-      .text(26, pos.h / 2, '', {
-        ...TEXT_STYLE_BASE,
-        fontSize: this.fontPx(13, ch),
-      })
-      .setOrigin(0, 0.5);
+    this.pennedUpLabel = this.addBitmapText(26, pos.h / 2, '', this.fontPx(10, ch)).setOrigin(
+      0,
+      0.5,
+    );
 
     this.pennedUpContainer.add([this.pennedUpIcon, this.pennedUpLabel]);
+    this.pennedUpContainer.setDepth(DEPTH.HUD);
     this.refreshPennedUp();
   }
 
@@ -210,32 +297,36 @@ export class TradingPostScene extends Phaser.Scene {
       .image(0, 0, TEXTURES.BUTTON_PRIMARY)
       .setOrigin(0)
       .setDisplaySize(tabPos.animals.w, tabPos.animals.h)
-      .setInteractive();
-    this.animalsTabLabel = this.add
-      .text(tabPos.animals.w / 2, tabPos.animals.h / 2, 'Animals', {
-        ...TEXT_STYLE_BASE,
-        fontSize: this.fontPx(14, ch),
-        fontStyle: 'bold',
-      })
-      .setOrigin(0.5);
+      .setInteractive()
+      .setDepth(DEPTH.BUTTONS);
+    this.animalsTabLabel = this.addBitmapText(
+      tabPos.animals.w / 2,
+      tabPos.animals.h / 2,
+      'Animals',
+      this.fontPx(12, ch),
+    ).setOrigin(0.5);
     this.animalsTabBtn.add([this.animalsTabBg, this.animalsTabLabel]);
+    this.animalsTabBtn.setDepth(DEPTH.BUTTONS);
     this.animalsTabBg.on('pointerdown', () => this.switchTab('animals'));
+    this.addButtonPressFeedback(this.animalsTabBg, this.animalsTabLabel);
 
     this.legendaryTabBtn = this.add.container(tabPos.legendary.x, tabPos.legendary.y);
     this.legendaryTabBg = this.add
       .image(0, 0, TEXTURES.BUTTON_SECONDARY)
       .setOrigin(0)
       .setDisplaySize(tabPos.legendary.w, tabPos.legendary.h)
-      .setInteractive();
-    this.legendaryTabLabel = this.add
-      .text(tabPos.legendary.w / 2, tabPos.legendary.h / 2, 'Legendary', {
-        ...TEXT_STYLE_BASE,
-        fontSize: this.fontPx(14, ch),
-        fontStyle: 'bold',
-      })
-      .setOrigin(0.5);
+      .setInteractive()
+      .setDepth(DEPTH.BUTTONS);
+    this.legendaryTabLabel = this.addBitmapText(
+      tabPos.legendary.w / 2,
+      tabPos.legendary.h / 2,
+      'Legendary',
+      this.fontPx(12, ch),
+    ).setOrigin(0.5);
     this.legendaryTabBtn.add([this.legendaryTabBg, this.legendaryTabLabel]);
+    this.legendaryTabBtn.setDepth(DEPTH.BUTTONS);
     this.legendaryTabBg.on('pointerdown', () => this.switchTab('legendary'));
+    this.addButtonPressFeedback(this.legendaryTabBg, this.legendaryTabLabel);
 
     this.updateTabHighlight(cw, ch);
   }
@@ -304,65 +395,56 @@ export class TradingPostScene extends Phaser.Scene {
 
     const bg = this.add.image(0, 0, bgTexture).setOrigin(0);
     const sprite = this.add.image(0, 0, 'animals', item.animalId).setOrigin(0.5);
-    const nameText = this.add
-      .text(0, 0, item.name, {
-        fontFamily: 'monospace',
-        fontSize: this.fontPx(11, ch),
-        fontStyle: 'bold',
-        color: PALETTE.TEXT_DARK,
-        wordWrap: { width: Math.max(36, pos.w - 8) },
-      })
-      .setOrigin(0.5, 0);
+    const nameText = this.addBitmapText(0, 0, item.name, this.fontPx(10, ch), TEXT_DARK_TINT)
+      .setOrigin(0.5, 0)
+      .setMaxWidth(Math.max(36, pos.w - 8));
 
     const costBadge = this.add.image(0, 0, TEXTURES.BADGE_MISCHIEF).setOrigin(0, 0.5);
-    const costText = this.add
-      .text(0, 0, String(item.costMischief), {
-        fontFamily: 'monospace',
-        fontSize: this.fontPx(11, ch),
-        fontStyle: 'bold',
-        color: PALETTE.TEXT_DARK,
-      })
-      .setOrigin(0, 0.5);
+    const costText = this.addBitmapText(
+      0,
+      0,
+      String(item.costMischief),
+      this.fontPx(10, ch),
+      TEXT_DARK_TINT,
+    ).setOrigin(0, 0.5);
 
-    const mischiefLabel = this.add
-      .text(0, 0, `+${item.mischief}M`, {
-        fontFamily: 'monospace',
-        fontSize: this.fontPx(10, ch),
-        color: PALETTE.TEXT_DARK,
-      })
-      .setOrigin(1, 0.5);
+    const mischiefLabel = this.addBitmapText(
+      0,
+      0,
+      `+${item.mischief}M`,
+      this.fontPx(9, ch),
+      TEXT_DARK_TINT,
+    ).setOrigin(1, 0.5);
 
-    const hayLabel = this.add
-      .text(0, 0, `+${item.hay}H`, {
-        fontFamily: 'monospace',
-        fontSize: this.fontPx(10, ch),
-        color: PALETTE.TEXT_DARK,
-      })
-      .setOrigin(1, 0.5);
+    const hayLabel = this.addBitmapText(
+      0,
+      0,
+      `+${item.hay}H`,
+      this.fontPx(9, ch),
+      TEXT_DARK_TINT,
+    ).setOrigin(1, 0.5);
 
-    const stockText = this.add
-      .text(0, 0, `x${item.remainingStock}`, {
-        fontFamily: 'monospace',
-        fontSize: this.fontPx(10, ch),
-        color: PALETTE.TEXT_DARK,
-      })
-      .setOrigin(0.5, 0.5);
+    const stockText = this.addBitmapText(
+      0,
+      0,
+      `x${item.remainingStock}`,
+      this.fontPx(9, ch),
+      TEXT_DARK_TINT,
+    ).setOrigin(0.5, 0.5);
 
-    let abilityLabel: Phaser.GameObjects.Text | null = null;
+    let abilityLabel: Phaser.GameObjects.BitmapText | null = null;
     if (ability.kind !== 'none' && ability.label) {
-      abilityLabel = this.add
-        .text(0, 0, ability.label, {
-          fontFamily: 'monospace',
-          fontSize: this.fontPx(9, ch),
-          fontStyle: 'bold',
-          color:
-            ability.trigger === 'on_enter' || ability.trigger === 'manual'
-              ? '#4d8fbf'
-              : ability.trigger === 'passive'
-                ? '#6aad7e'
-                : '#c4982a',
-        })
-        .setOrigin(0.5, 0);
+      abilityLabel = this.addBitmapText(
+        0,
+        0,
+        ability.label,
+        this.fontPx(8, ch),
+        ability.trigger === 'on_enter' || ability.trigger === 'manual'
+          ? 0x4d8fbf
+          : ability.trigger === 'passive'
+            ? 0x6aad7e
+            : 0xc4982a,
+      ).setOrigin(0.5, 0);
     }
 
     let star: Phaser.GameObjects.Image | null = null;
@@ -389,6 +471,7 @@ export class TradingPostScene extends Phaser.Scene {
     }
 
     container.add(children);
+    container.setDepth(DEPTH.CARDS);
 
     const cardView: ShopCardView = {
       container,
@@ -425,27 +508,27 @@ export class TradingPostScene extends Phaser.Scene {
     cardView.sprite.setPosition(pos.w / 2, spriteY).setScale(spriteScale);
 
     const nameY = compact ? Math.round(pos.h * 0.48) : Math.round(pos.h * 0.5);
-    cardView.nameText.setPosition(pos.w / 2, nameY).setStyle({
-      fontSize: this.fontPx(compact ? 10 : 11, ch),
-      wordWrap: { width: Math.max(36, pos.w - 8) },
-    });
+    cardView.nameText
+      .setPosition(pos.w / 2, nameY)
+      .setFontSize(this.fontPx(compact ? 9 : 10, ch))
+      .setMaxWidth(Math.max(36, pos.w - 8));
 
     const costY = pos.h - (compact ? 10 : 22);
     cardView.costBadge.setPosition(6, costY).setDisplaySize(badgeSize, badgeSize);
     cardView.costText
       .setPosition(6 + badgeSize + 4, costY)
-      .setStyle({ fontSize: this.fontPx(compact ? 9 : 11, ch) });
+      .setFontSize(this.fontPx(compact ? 8 : 10, ch));
 
     if (compact) {
       cardView.mischiefLabel
         .setText(`M${cardView.item.mischief}/H${cardView.item.hay}`)
         .setPosition(pos.w - 6, 8)
-        .setStyle({ fontSize: this.fontPx(9, ch) });
+        .setFontSize(this.fontPx(8, ch));
       cardView.hayLabel.setVisible(false);
       cardView.stockText
         .setPosition(pos.w - 22, pos.h - 9)
         .setOrigin(1, 0.5)
-        .setStyle({ fontSize: this.fontPx(9, ch) });
+        .setFontSize(this.fontPx(8, ch));
       if (cardView.abilityLabel) {
         cardView.abilityLabel.setVisible(false);
       }
@@ -454,21 +537,21 @@ export class TradingPostScene extends Phaser.Scene {
         .setVisible(true)
         .setText(`+${cardView.item.mischief}M`)
         .setPosition(pos.w - 8, pos.h - 34)
-        .setStyle({ fontSize: this.fontPx(10, ch) });
+        .setFontSize(this.fontPx(9, ch));
       cardView.hayLabel
         .setVisible(true)
         .setText(`+${cardView.item.hay}H`)
         .setPosition(pos.w - 8, pos.h - 20)
-        .setStyle({ fontSize: this.fontPx(10, ch) });
+        .setFontSize(this.fontPx(9, ch));
       cardView.stockText
         .setPosition(pos.w / 2, pos.h - 8)
         .setOrigin(0.5, 0.5)
-        .setStyle({ fontSize: this.fontPx(10, ch) });
+        .setFontSize(this.fontPx(9, ch));
       if (cardView.abilityLabel) {
         cardView.abilityLabel
           .setVisible(true)
           .setPosition(pos.w / 2, Math.round(pos.h * 0.7))
-          .setStyle({ fontSize: this.fontPx(9, ch) });
+          .setFontSize(this.fontPx(8, ch));
       }
     }
 
@@ -520,20 +603,19 @@ export class TradingPostScene extends Phaser.Scene {
 
   private createCapacityUpgrade(cw: number, ch: number): void {
     const pos = getCapacityUpgradePosition(cw, ch);
-    this.capacityButton = this.add.container(pos.x, pos.y);
+    this.capacityButton = this.add.container(pos.x, pos.y).setDepth(DEPTH.BUTTONS);
 
     this.capacityBtnBg = this.add
       .image(0, 0, TEXTURES.BUTTON_SECONDARY)
       .setOrigin(0)
       .setDisplaySize(pos.w, pos.h);
 
-    this.capacityBtnText = this.add
-      .text(pos.w / 2, pos.h / 2 - 3, '', {
-        ...TEXT_STYLE_BASE,
-        fontSize: this.fontPx(14, ch),
-        fontStyle: 'bold',
-      })
-      .setOrigin(0.5);
+    this.capacityBtnText = this.addBitmapText(
+      pos.w / 2,
+      pos.h / 2 - 3,
+      '',
+      this.fontPx(12, ch),
+    ).setOrigin(0.5);
 
     this.capacityButton.add([this.capacityBtnBg, this.capacityBtnText]);
     this.refreshCapacityButton(cw, ch);
@@ -546,9 +628,7 @@ export class TradingPostScene extends Phaser.Scene {
 
     this.capacityButton.setPosition(pos.x, pos.y);
     this.capacityBtnBg.setDisplaySize(pos.w, pos.h);
-    this.capacityBtnText
-      .setPosition(pos.w / 2, pos.h / 2 - 3)
-      .setStyle({ fontSize: this.fontPx(14, ch) });
+    this.capacityBtnText.setPosition(pos.w / 2, pos.h / 2 - 3).setFontSize(this.fontPx(12, ch));
 
     this.capacityBtnBg.removeInteractive();
     this.capacityBtnBg.removeAllListeners();
@@ -572,6 +652,7 @@ export class TradingPostScene extends Phaser.Scene {
         Phaser.Geom.Rectangle.Contains,
       );
       this.capacityBtnBg.on('pointerdown', this.onUpgradeCapacity, this);
+      this.addButtonPressFeedback(this.capacityBtnBg, this.capacityBtnText);
     } else {
       this.capacityBtnBg.setTexture(TEXTURES.BUTTON_SECONDARY).setDisplaySize(pos.w, pos.h);
       this.capacityButton.setAlpha(0.4);
@@ -587,20 +668,19 @@ export class TradingPostScene extends Phaser.Scene {
 
   private createStartNightButton(cw: number, ch: number): void {
     const pos = getStartNightButtonPosition(cw, ch);
-    this.startNightButton = this.add.container(pos.x, pos.y);
+    this.startNightButton = this.add.container(pos.x, pos.y).setDepth(DEPTH.BUTTONS);
 
     this.startNightBtnBg = this.add
       .image(0, 0, TEXTURES.BUTTON_PRIMARY)
       .setOrigin(0)
       .setDisplaySize(pos.w, pos.h);
 
-    this.startNightBtnText = this.add
-      .text(pos.w / 2, pos.h / 2 - 3, 'Start Next Night', {
-        ...TEXT_STYLE_BASE,
-        fontSize: this.fontPx(16, ch),
-        fontStyle: 'bold',
-      })
-      .setOrigin(0.5);
+    this.startNightBtnText = this.addBitmapText(
+      pos.w / 2,
+      pos.h / 2 - 3,
+      'Start Next Night',
+      this.fontPx(12, ch),
+    ).setOrigin(0.5);
 
     this.startNightButton.add([this.startNightBtnBg, this.startNightBtnText]);
 
@@ -609,26 +689,29 @@ export class TradingPostScene extends Phaser.Scene {
       Phaser.Geom.Rectangle.Contains,
     );
     this.startNightBtnBg.on('pointerdown', this.onStartNight, this);
+    this.addButtonPressFeedback(this.startNightBtnBg, this.startNightBtnText);
   }
 
   private onStartNight(): void {
     const session = gameStore.getState();
     const nextSession = startNextNight(session);
     gameStore.setState(nextSession);
-    this.scene.start(SceneKey.Barn);
+    this.transitionToBarn();
   }
 
   private applyLayout(cw: number, ch: number): void {
-    this.background.setPosition(cw / 2, ch / 2).setSize(cw, ch);
+    this.background.setPosition(0, 0).setSize(cw, ch);
+    this.shelfShadow.setPosition(cw / 2, ch * 0.38).setSize(cw * 0.9, ch * 0.26);
+    this.counterStrip.setPosition(cw / 2, ch * 0.76).setSize(cw, ch * 0.36);
 
     const session = gameStore.getState();
     this.titleText
       .setPosition(cw / 2, Math.round((80 / 844) * ch))
-      .setStyle({ fontSize: this.fontPx(22, ch) });
+      .setFontSize(this.fontPx(14, ch));
     this.nightText
       .setPosition(cw / 2, Math.round((106 / 844) * ch))
       .setText(`Night ${session.nightNumber}`)
-      .setStyle({ fontSize: this.fontPx(14, ch) });
+      .setFontSize(this.fontPx(12, ch));
 
     const currencyPos = getCurrencyHeaderPosition(cw, ch);
     const badgeSize = Math.max(20, Math.round((24 / 844) * ch));
@@ -640,21 +723,21 @@ export class TradingPostScene extends Phaser.Scene {
       .setDisplaySize(badgeSize, badgeSize);
     this.mischiefText
       .setPosition(currencyPos.x + badgeSize + 6, currencyPos.y + currencyPos.h / 2)
-      .setStyle({ fontSize: this.fontPx(18, ch) });
+      .setFontSize(this.fontPx(14, ch));
 
     this.hayIcon
       .setPosition(currencyPos.x + hayIconOffset, currencyPos.y + currencyPos.h / 2)
       .setDisplaySize(badgeSize, badgeSize);
     this.hayText
       .setPosition(currencyPos.x + hayTextOffset, currencyPos.y + currencyPos.h / 2)
-      .setStyle({ fontSize: this.fontPx(18, ch) });
+      .setFontSize(this.fontPx(14, ch));
 
     const pennedPos = getPennedUpPosition(cw, ch);
     this.pennedUpContainer.setPosition(pennedPos.x, pennedPos.y);
     this.pennedUpIcon.setPosition(0, pennedPos.h / 2).setDisplaySize(20, 20);
     this.pennedUpLabel
       .setPosition(Math.round((26 / 40) * pennedPos.h), pennedPos.h / 2)
-      .setStyle({ fontSize: this.fontPx(13, ch) });
+      .setFontSize(this.fontPx(10, ch));
 
     const tabPos = getTabButtonPositions(cw, ch);
     this.animalsTabBtn.setPosition(tabPos.animals.x, tabPos.animals.y);
@@ -663,10 +746,10 @@ export class TradingPostScene extends Phaser.Scene {
     this.legendaryTabBg.setDisplaySize(tabPos.legendary.w, tabPos.legendary.h);
     this.animalsTabLabel
       .setPosition(tabPos.animals.w / 2, tabPos.animals.h / 2)
-      .setStyle({ fontSize: this.fontPx(14, ch) });
+      .setFontSize(this.fontPx(12, ch));
     this.legendaryTabLabel
       .setPosition(tabPos.legendary.w / 2, tabPos.legendary.h / 2)
-      .setStyle({ fontSize: this.fontPx(14, ch) });
+      .setFontSize(this.fontPx(12, ch));
     this.updateTabHighlight(cw, ch);
 
     const cardPositions = getShopGridPositions(this.shopCards.length, cw, ch);
@@ -684,7 +767,9 @@ export class TradingPostScene extends Phaser.Scene {
     this.startNightBtnBg.setDisplaySize(startNightPos.w, startNightPos.h);
     this.startNightBtnText
       .setPosition(startNightPos.w / 2, startNightPos.h / 2 - 3)
-      .setStyle({ fontSize: this.fontPx(16, ch) });
+      .setFontSize(this.fontPx(12, ch));
+    this.startNightBtnBg.setData('baseY', 0);
+    this.startNightBtnText.setData('baseY', startNightPos.h / 2 - 3);
 
     this.startNightBtnBg.removeInteractive();
     this.startNightBtnBg.removeAllListeners();
@@ -693,6 +778,7 @@ export class TradingPostScene extends Phaser.Scene {
       Phaser.Geom.Rectangle.Contains,
     );
     this.startNightBtnBg.on('pointerdown', this.onStartNight, this);
+    this.addButtonPressFeedback(this.startNightBtnBg, this.startNightBtnText);
   }
 
   private handleResize(gameSize: Phaser.Structs.Size): void {
