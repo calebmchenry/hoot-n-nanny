@@ -58,6 +58,10 @@ export const LAYOUT = {
     GRID_GAP_X: 10,
     GRID_GAP_Y: 10,
   },
+  SHOP_CARD: {
+    TEX_WIDTH: 170,
+    TEX_HEIGHT: 200,
+  },
   BADGE: {
     DIAMETER: 32,
   },
@@ -170,6 +174,9 @@ export const TEXTURES = {
   CARD_PARCHMENT: 'ui-card-parchment',
   CARD_NOISY: 'ui-card-noisy',
   CARD_LEGENDARY: 'ui-card-legendary',
+  SHOP_CARD_PARCHMENT: 'ui-shop-card-parchment',
+  SHOP_CARD_NOISY: 'ui-shop-card-noisy',
+  SHOP_CARD_LEGENDARY: 'ui-shop-card-legendary',
   SLOT_EMPTY: 'ui-slot-empty',
   SLOT_OCCUPIED: 'ui-slot-occupied',
   BADGE_MISCHIEF: 'ui-badge-mischief',

@@ -110,12 +110,10 @@ export class TradingPostScene extends Phaser.Scene {
     button: Phaser.GameObjects.Image,
     label: Phaser.GameObjects.BitmapText,
   ): void {
-    if (button.getData('feedback-bound') === true) {
-      return;
-    }
-    button.setData('feedback-bound', true);
     button.setData('baseY', button.y);
     label.setData('baseY', label.y);
+
+    const PRESS_OFFSET = 3;
 
     button.on('pointerdown', () => {
       if (!button.input?.enabled) {
@@ -124,30 +122,28 @@ export class TradingPostScene extends Phaser.Scene {
       this.tweens.killTweensOf([button, label]);
       const baseY = Number(button.getData('baseY')) || button.y;
       const labelBaseY = Number(label.getData('baseY')) || label.y;
+      button.setTint(0xdddddd);
       this.tweens.add({
-        targets: [button, label],
-        scaleX: 0.97,
-        scaleY: 0.97,
-        duration: 70,
+        targets: button,
+        y: baseY + PRESS_OFFSET,
+        duration: 60,
         ease: 'Quad.Out',
       });
-      this.tweens.add({ targets: button, y: baseY + 2, duration: 70, ease: 'Quad.Out' });
-      this.tweens.add({ targets: label, y: labelBaseY + 2, duration: 70, ease: 'Quad.Out' });
+      this.tweens.add({
+        targets: label,
+        y: labelBaseY + PRESS_OFFSET,
+        duration: 60,
+        ease: 'Quad.Out',
+      });
     });
 
     const release = (): void => {
       this.tweens.killTweensOf([button, label]);
       const baseY = Number(button.getData('baseY')) || button.y;
       const labelBaseY = Number(label.getData('baseY')) || label.y;
-      this.tweens.add({
-        targets: [button, label],
-        scaleX: 1,
-        scaleY: 1,
-        duration: 110,
-        ease: 'Back.Out',
-      });
-      this.tweens.add({ targets: button, y: baseY, duration: 110, ease: 'Back.Out' });
-      this.tweens.add({ targets: label, y: labelBaseY, duration: 110, ease: 'Back.Out' });
+      button.clearTint();
+      this.tweens.add({ targets: button, y: baseY, duration: 100, ease: 'Quad.Out' });
+      this.tweens.add({ targets: label, y: labelBaseY, duration: 100, ease: 'Quad.Out' });
     };
 
     button.on('pointerup', release);
@@ -228,13 +224,11 @@ export class TradingPostScene extends Phaser.Scene {
     this.mobilePreviewAnimalId = cardView.item.animalId;
     const didShowTooltip = this.showShopCardTooltip(cardView);
     if (!didShowTooltip) {
-      this.tweens.add({
-        targets: cardView.container,
-        scaleX: 1.04,
-        scaleY: 1.04,
-        duration: 80,
-        yoyo: true,
-        ease: 'Quad.Out',
+      cardView.bg.setTint(0xeeeeee);
+      this.time.delayedCall(120, () => {
+        if (cardView.bg.active) {
+          cardView.bg.clearTint();
+        }
       });
     }
   }
@@ -417,8 +411,8 @@ export class TradingPostScene extends Phaser.Scene {
     ).setOrigin(0.5);
     this.animalsTabBtn.add([this.animalsTabBg, this.animalsTabLabel]);
     this.animalsTabBtn.setDepth(DEPTH.BUTTONS);
-    this.animalsTabBg.on('pointerdown', () => this.switchTab('animals'));
     this.addButtonPressFeedback(this.animalsTabBg, this.animalsTabLabel);
+    this.animalsTabBg.on('pointerdown', () => this.switchTab('animals'));
 
     this.legendaryTabBtn = this.add.container(tabPos.legendary.x, tabPos.legendary.y);
     this.legendaryTabBg = this.add
@@ -435,8 +429,8 @@ export class TradingPostScene extends Phaser.Scene {
     ).setOrigin(0.5);
     this.legendaryTabBtn.add([this.legendaryTabBg, this.legendaryTabLabel]);
     this.legendaryTabBtn.setDepth(DEPTH.BUTTONS);
-    this.legendaryTabBg.on('pointerdown', () => this.switchTab('legendary'));
     this.addButtonPressFeedback(this.legendaryTabBg, this.legendaryTabLabel);
+    this.legendaryTabBg.on('pointerdown', () => this.switchTab('legendary'));
 
     this.updateTabHighlight(cw, ch);
   }
@@ -498,11 +492,11 @@ export class TradingPostScene extends Phaser.Scene {
 
     let bgTexture: string;
     if (animalDef.tier === 'legendary') {
-      bgTexture = TEXTURES.CARD_LEGENDARY;
+      bgTexture = TEXTURES.SHOP_CARD_LEGENDARY;
     } else if (item.noisy) {
-      bgTexture = TEXTURES.CARD_NOISY;
+      bgTexture = TEXTURES.SHOP_CARD_NOISY;
     } else {
-      bgTexture = TEXTURES.CARD_PARCHMENT;
+      bgTexture = TEXTURES.SHOP_CARD_PARCHMENT;
     }
 
     const bg = this.add.image(0, 0, bgTexture).setOrigin(0);
@@ -612,7 +606,8 @@ export class TradingPostScene extends Phaser.Scene {
 
     const badgeSize = Math.max(16, Math.round((18 / 108) * pos.h));
     const spriteY = Math.round(pos.h * 0.3);
-    const spriteScale = Math.max(1.4, Math.min(2.4, pos.h / 44));
+    const maxEmojiSize = Math.min(pos.w, pos.h) * 0.38;
+    const spriteScale = maxEmojiSize / 128;
 
     cardView.sprite.setPosition(pos.w / 2, spriteY).setScale(spriteScale);
 
@@ -702,14 +697,15 @@ export class TradingPostScene extends Phaser.Scene {
     const result = purchaseAnimalInSession(session, animalId);
     gameStore.setState(result.session);
 
+    const baseY = container.y;
     this.tweens.add({
       targets: container,
-      scaleX: 1.08,
-      scaleY: 1.08,
+      y: baseY - 4,
       duration: ANIMATION.PURCHASE_FEEDBACK_MS / 2,
       yoyo: true,
       ease: 'Quad.easeOut',
       onComplete: () => {
+        container.y = baseY;
         this.refreshDisplay();
       },
     });
@@ -744,6 +740,10 @@ export class TradingPostScene extends Phaser.Scene {
     this.capacityBtnBg.setDisplaySize(pos.w, pos.h);
     this.capacityBtnText.setPosition(pos.w / 2, pos.h / 2 - 3).setFontSize(this.fontPx(12, ch));
 
+    this.tweens.killTweensOf([this.capacityBtnBg, this.capacityBtnText]);
+    this.capacityBtnBg.clearTint();
+    this.capacityBtnBg.setY(0);
+    this.capacityBtnText.setY(pos.h / 2 - 3);
     this.capacityBtnBg.removeInteractive();
     this.capacityBtnBg.removeAllListeners();
 
@@ -765,8 +765,8 @@ export class TradingPostScene extends Phaser.Scene {
         new Phaser.Geom.Rectangle(0, 0, pos.w, pos.h),
         Phaser.Geom.Rectangle.Contains,
       );
-      this.capacityBtnBg.on('pointerdown', this.onUpgradeCapacity, this);
       this.addButtonPressFeedback(this.capacityBtnBg, this.capacityBtnText);
+      this.capacityBtnBg.on('pointerdown', this.onUpgradeCapacity, this);
     } else {
       this.capacityBtnBg.setTexture(TEXTURES.BUTTON_SECONDARY).setDisplaySize(pos.w, pos.h);
       this.capacityButton.setAlpha(0.4);
@@ -804,8 +804,8 @@ export class TradingPostScene extends Phaser.Scene {
       new Phaser.Geom.Rectangle(0, 0, pos.w, pos.h),
       Phaser.Geom.Rectangle.Contains,
     );
-    this.startNightBtnBg.on('pointerdown', this.onStartNight, this);
     this.addButtonPressFeedback(this.startNightBtnBg, this.startNightBtnText);
+    this.startNightBtnBg.on('pointerdown', this.onStartNight, this);
   }
 
   private onStartNight(): void {
@@ -886,17 +886,19 @@ export class TradingPostScene extends Phaser.Scene {
     this.startNightBtnText
       .setPosition(startNightPos.w / 2, startNightPos.h / 2 - 3)
       .setFontSize(this.fontPx(12, ch));
-    this.startNightBtnBg.setData('baseY', 0);
-    this.startNightBtnText.setData('baseY', startNightPos.h / 2 - 3);
 
+    this.tweens.killTweensOf([this.startNightBtnBg, this.startNightBtnText]);
+    this.startNightBtnBg.clearTint();
+    this.startNightBtnBg.setY(0);
+    this.startNightBtnText.setY(startNightPos.h / 2 - 3);
     this.startNightBtnBg.removeInteractive();
     this.startNightBtnBg.removeAllListeners();
     this.startNightBtnBg.setInteractive(
       new Phaser.Geom.Rectangle(0, 0, startNightPos.w, startNightPos.h),
       Phaser.Geom.Rectangle.Contains,
     );
-    this.startNightBtnBg.on('pointerdown', this.onStartNight, this);
     this.addButtonPressFeedback(this.startNightBtnBg, this.startNightBtnText);
+    this.startNightBtnBg.on('pointerdown', this.onStartNight, this);
   }
 
   private handleResize(gameSize: Phaser.Structs.Size): void {

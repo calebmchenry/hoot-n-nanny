@@ -984,6 +984,30 @@ export const generateProceduralTextures = (scene: Phaser.Scene): void => {
     LAYOUT.SLOT.HEIGHT,
     'legendary',
   );
+  generatePaperTexture(
+    scene,
+    TEXTURES.SHOP_CARD_PARCHMENT,
+    PALETTE.PARCHMENT,
+    LAYOUT.SHOP_CARD.TEX_WIDTH,
+    LAYOUT.SHOP_CARD.TEX_HEIGHT,
+    'parchment',
+  );
+  generatePaperTexture(
+    scene,
+    TEXTURES.SHOP_CARD_NOISY,
+    PALETTE.PARCHMENT,
+    LAYOUT.SHOP_CARD.TEX_WIDTH,
+    LAYOUT.SHOP_CARD.TEX_HEIGHT,
+    'noisy',
+  );
+  generatePaperTexture(
+    scene,
+    TEXTURES.SHOP_CARD_LEGENDARY,
+    0xf5e6b8,
+    LAYOUT.SHOP_CARD.TEX_WIDTH,
+    LAYOUT.SHOP_CARD.TEX_HEIGHT,
+    'legendary',
+  );
   generatePaintedButton(scene, TEXTURES.BUTTON_PRIMARY, PALETTE.BUTTON_PRIMARY, 350, 56);
   generatePaintedButton(scene, TEXTURES.BUTTON_SECONDARY, PALETTE.BUTTON_SECONDARY, 350, 56);
   generatePaintedButton(scene, TEXTURES.BUTTON_DANGER, PALETTE.BUST, 350, 56);
