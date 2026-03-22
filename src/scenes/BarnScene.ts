@@ -8,6 +8,7 @@ import {
   getFarmhouseRect,
   getFarmhouseWindowRect,
   getActionBarPosition,
+  getEndNightPosition,
   getOverlayBounds,
   getInfoPanelBounds,
   scaledFont,
@@ -103,9 +104,10 @@ export class BarnScene extends Phaser.Scene {
   // Action buttons
   private primaryButton!: Phaser.GameObjects.Image;
   private primaryButtonText!: Phaser.GameObjects.BitmapText;
-  private secondaryButton: Phaser.GameObjects.Image | null = null;
-  private secondaryButtonText: Phaser.GameObjects.BitmapText | null = null;
+  private endNightButton: Phaser.GameObjects.Image | null = null;
+  private endNightButtonText: Phaser.GameObjects.BitmapText | null = null;
   private actionBarVisible = true;
+  private isEndNightRevealed = false;
 
   // Overlays
   private bustOverlay: Phaser.GameObjects.Container | null = null;
@@ -215,14 +217,15 @@ export class BarnScene extends Phaser.Scene {
     this.cardShadows = [];
     this.slotImages = [];
     this.noiseDots = [];
-    this.secondaryButton = null;
-    this.secondaryButtonText = null;
+    this.endNightButton = null;
+    this.endNightButtonText = null;
     this.windowGlowTween = null;
     this.deckFloatTween = null;
     this.dustEmitter = null;
     this.warningEmitter = null;
     this.previousHudValues = null;
     this.actionBarVisible = true;
+    this.isEndNightRevealed = false;
     this.pendingResize = null;
     this.infoPanelDismissArea = null;
     this.tooltipDelayTimer = null;
@@ -297,6 +300,11 @@ export class BarnScene extends Phaser.Scene {
       .setDisplaySize(windowRect.w, windowRect.h)
       .setAlpha(0)
       .setDepth(DEPTH.FARMHOUSE + 1);
+
+    const farmhouseVisible = farmhouseRect.w > 0 && farmhouseRect.h > 0;
+    this.farmhouseImage.setVisible(farmhouseVisible);
+    this.farmhouseShadow.setVisible(farmhouseVisible);
+    this.windowGlow.setVisible(farmhouseVisible);
 
     // Deck stack
     const deckRect = getDeckStackPosition(capacity, cw, ch);
@@ -436,8 +444,8 @@ export class BarnScene extends Phaser.Scene {
       .setDepth(DEPTH.HUD);
     this.updatePennedUpIndicator(state);
 
-    // === Action buttons (initial: single draw button) ===
-    this.createActionButtons(false, cw, ch);
+    // === Action buttons ===
+    this.createActionButtons(cw, ch);
 
     this.dustEmitter = this.add
       .particles(0, 0, TEXTURES.FX_DUST, {
@@ -480,7 +488,8 @@ export class BarnScene extends Phaser.Scene {
         this.startWindowGlow();
       }
       if (!night.complete && !night.bust) {
-        this.createActionButtons(true, cw, ch);
+        this.setDrawButtonLabel(true);
+        this.revealEndNightButton(false);
       }
     }
 
@@ -546,23 +555,24 @@ export class BarnScene extends Phaser.Scene {
 
   // === Button creation ===
 
-  private createActionButtons(dual: boolean, cw?: number, ch?: number): void {
+  private createActionButtons(cw?: number, ch?: number): void {
     if (this.primaryButton) {
       this.primaryButton.destroy();
       this.primaryButtonText.destroy();
     }
-    if (this.secondaryButton) {
-      this.secondaryButton.destroy();
-      this.secondaryButtonText!.destroy();
-      this.secondaryButton = null;
-      this.secondaryButtonText = null;
+    if (this.endNightButton) {
+      this.endNightButton.destroy();
+      this.endNightButtonText?.destroy();
+      this.endNightButton = null;
+      this.endNightButtonText = null;
     }
 
     const canvasSize = this.getCanvasSize();
     const width = cw ?? canvasSize.cw;
     const height = ch ?? canvasSize.ch;
     const state = gameStore.getState();
-    const layout = getActionBarPosition(state.capacity, dual, width, height);
+    const layout = getActionBarPosition(state.capacity, false, width, height);
+    const endNightLayout = getEndNightPosition(state.capacity, width, height);
 
     this.primaryButton = this.add
       .image(layout.primary.x, layout.primary.y, TEXTURES.BUTTON_PRIMARY)
@@ -571,11 +581,10 @@ export class BarnScene extends Phaser.Scene {
       .setInteractive()
       .setDepth(DEPTH.BUTTONS);
 
-    const primaryLabel = dual ? 'KEEP GOING' : 'DRAW ANIMAL';
     this.primaryButtonText = this.addBitmapText(
       layout.primary.x + layout.primary.w / 2,
       layout.primary.y + layout.primary.h / 2,
-      primaryLabel,
+      'DRAW ANIMAL',
       this.fontPx(14, height),
     )
       .setOrigin(0.5)
@@ -584,26 +593,63 @@ export class BarnScene extends Phaser.Scene {
     this.primaryButton.on('pointerdown', this.onDrawAnimal, this);
     this.addButtonPressFeedback(this.primaryButton, this.primaryButtonText);
 
-    if (dual && layout.secondary) {
-      this.secondaryButton = this.add
-        .image(layout.secondary.x, layout.secondary.y, TEXTURES.BUTTON_SECONDARY)
-        .setOrigin(0)
-        .setDisplaySize(layout.secondary.w, layout.secondary.h)
-        .setInteractive()
-        .setDepth(DEPTH.BUTTONS);
+    this.endNightButton = this.add
+      .image(endNightLayout.x, endNightLayout.y, TEXTURES.BUTTON_SECONDARY)
+      .setOrigin(0)
+      .setDisplaySize(endNightLayout.w, endNightLayout.h)
+      .setDepth(DEPTH.BUTTONS);
+    this.endNightButtonText = this.addBitmapText(
+      endNightLayout.x + endNightLayout.w / 2,
+      endNightLayout.y + endNightLayout.h / 2,
+      'END NIGHT',
+      this.fontPx(11, height),
+    )
+      .setOrigin(0.5)
+      .setDepth(DEPTH.BUTTONS + 1);
+    this.endNightButton.on('pointerdown', this.onCallItANight, this);
+    this.addButtonPressFeedback(this.endNightButton, this.endNightButtonText);
+    this.hideEndNightButton();
+  }
 
-      this.secondaryButtonText = this.addBitmapText(
-        layout.secondary.x + layout.secondary.w / 2,
-        layout.secondary.y + layout.secondary.h / 2,
-        'CALL IT A NIGHT',
-        this.fontPx(14, height),
-      )
-        .setOrigin(0.5)
-        .setDepth(DEPTH.BUTTONS + 1);
+  private setDrawButtonLabel(hasDrawn: boolean): void {
+    this.primaryButtonText.setText(hasDrawn ? 'KEEP GOING' : 'DRAW ANIMAL');
+  }
 
-      this.secondaryButton.on('pointerdown', this.onCallItANight, this);
-      this.addButtonPressFeedback(this.secondaryButton, this.secondaryButtonText);
+  private revealEndNightButton(animated: boolean): void {
+    if (!this.endNightButton || !this.endNightButtonText) {
+      return;
     }
+    if (this.isEndNightRevealed && this.endNightButton.alpha >= 1) {
+      return;
+    }
+
+    this.isEndNightRevealed = true;
+    this.endNightButton.setVisible(true).setAlpha(0);
+    this.endNightButtonText.setVisible(true).setAlpha(0);
+    this.endNightButton.setInteractive();
+
+    if (!animated) {
+      this.endNightButton.setAlpha(1);
+      this.endNightButtonText.setAlpha(1);
+      return;
+    }
+
+    this.tweens.add({
+      targets: [this.endNightButton, this.endNightButtonText],
+      alpha: 1,
+      duration: 180,
+      ease: 'Quad.Out',
+    });
+  }
+
+  private hideEndNightButton(): void {
+    if (!this.endNightButton || !this.endNightButtonText) {
+      return;
+    }
+    this.isEndNightRevealed = false;
+    this.endNightButton.removeInteractive();
+    this.endNightButton.setAlpha(0).setVisible(false);
+    this.endNightButtonText.setAlpha(0).setVisible(false);
   }
 
   private addButtonPressFeedback(
@@ -774,10 +820,10 @@ export class BarnScene extends Phaser.Scene {
     this.primaryButton.removeInteractive();
     this.primaryButton.setAlpha(0.6);
     this.primaryButtonText.setAlpha(0.6);
-    if (this.secondaryButton) {
-      this.secondaryButton.removeInteractive();
-      this.secondaryButton.setAlpha(0.6);
-      this.secondaryButtonText!.setAlpha(0.6);
+    if (this.endNightButton && this.endNightButtonText && this.isEndNightRevealed) {
+      this.endNightButton.removeInteractive();
+      this.endNightButton.setAlpha(0.6);
+      this.endNightButtonText.setAlpha(0.6);
     }
   }
 
@@ -785,10 +831,10 @@ export class BarnScene extends Phaser.Scene {
     this.primaryButton.setInteractive();
     this.primaryButton.setAlpha(1);
     this.primaryButtonText.setAlpha(1);
-    if (this.secondaryButton) {
-      this.secondaryButton.setInteractive();
-      this.secondaryButton.setAlpha(1);
-      this.secondaryButtonText!.setAlpha(1);
+    if (this.endNightButton && this.endNightButtonText && this.isEndNightRevealed) {
+      this.endNightButton.setInteractive();
+      this.endNightButton.setAlpha(1);
+      this.endNightButtonText.setAlpha(1);
     }
   }
 
@@ -796,9 +842,9 @@ export class BarnScene extends Phaser.Scene {
     this.actionBarVisible = false;
     this.primaryButton.setVisible(false);
     this.primaryButtonText.setVisible(false);
-    if (this.secondaryButton) {
-      this.secondaryButton.setVisible(false);
-      this.secondaryButtonText!.setVisible(false);
+    if (this.endNightButton && this.endNightButtonText) {
+      this.endNightButton.setVisible(false);
+      this.endNightButtonText.setVisible(false);
     }
   }
 
@@ -806,9 +852,10 @@ export class BarnScene extends Phaser.Scene {
     this.actionBarVisible = true;
     this.primaryButton.setVisible(true);
     this.primaryButtonText.setVisible(true);
-    if (this.secondaryButton) {
-      this.secondaryButton.setVisible(true);
-      this.secondaryButtonText!.setVisible(true);
+    if (this.endNightButton && this.endNightButtonText) {
+      const showEndNight = this.isEndNightRevealed;
+      this.endNightButton.setVisible(showEndNight);
+      this.endNightButtonText.setVisible(showEndNight);
     }
   }
 
@@ -817,8 +864,7 @@ export class BarnScene extends Phaser.Scene {
       return;
     }
 
-    const dual = Boolean(this.secondaryButton && this.secondaryButtonText);
-    const layout = getActionBarPosition(capacity, dual, cw, ch);
+    const layout = getActionBarPosition(capacity, false, cw, ch);
     this.primaryButton
       .setPosition(layout.primary.x, layout.primary.y)
       .setDisplaySize(layout.primary.w, layout.primary.h);
@@ -828,18 +874,16 @@ export class BarnScene extends Phaser.Scene {
     this.primaryButton.setData('baseY', layout.primary.y);
     this.primaryButtonText.setData('baseY', layout.primary.y + layout.primary.h / 2);
 
-    if (dual && this.secondaryButton && this.secondaryButtonText && layout.secondary) {
-      this.secondaryButton
-        .setPosition(layout.secondary.x, layout.secondary.y)
-        .setDisplaySize(layout.secondary.w, layout.secondary.h);
-      this.secondaryButtonText
-        .setPosition(
-          layout.secondary.x + layout.secondary.w / 2,
-          layout.secondary.y + layout.secondary.h / 2,
-        )
-        .setFontSize(this.fontPx(14, ch));
-      this.secondaryButton.setData('baseY', layout.secondary.y);
-      this.secondaryButtonText.setData('baseY', layout.secondary.y + layout.secondary.h / 2);
+    if (this.endNightButton && this.endNightButtonText) {
+      const endNight = getEndNightPosition(capacity, cw, ch);
+      this.endNightButton
+        .setPosition(endNight.x, endNight.y)
+        .setDisplaySize(endNight.w, endNight.h);
+      this.endNightButtonText
+        .setPosition(endNight.x + endNight.w / 2, endNight.y + endNight.h / 2)
+        .setFontSize(this.fontPx(11, ch));
+      this.endNightButton.setData('baseY', endNight.y);
+      this.endNightButtonText.setData('baseY', endNight.y + endNight.h / 2);
     }
   }
 
@@ -952,18 +996,28 @@ export class BarnScene extends Phaser.Scene {
     const overlayBounds = getOverlayBounds(capacity, cw, ch);
     const infoPanelBounds = getInfoPanelBounds(cw, ch);
 
-    this.farmhouseImage
-      .setPosition(farmhouseRect.x, farmhouseRect.y)
-      .setDisplaySize(farmhouseRect.w, farmhouseRect.h);
-    this.farmhouseShadow
-      .setPosition(
-        farmhouseRect.x + farmhouseRect.w * 0.56,
-        farmhouseRect.y + farmhouseRect.h * 0.94,
-      )
-      .setSize(farmhouseRect.w * 0.92, farmhouseRect.h * 0.22);
-    this.windowGlow
-      .setPosition(windowRect.x, windowRect.y)
-      .setDisplaySize(windowRect.w, windowRect.h);
+    const farmhouseVisible = farmhouseRect.w > 0 && farmhouseRect.h > 0;
+    if (farmhouseVisible) {
+      this.farmhouseImage
+        .setVisible(true)
+        .setPosition(farmhouseRect.x, farmhouseRect.y)
+        .setDisplaySize(farmhouseRect.w, farmhouseRect.h);
+      this.farmhouseShadow
+        .setVisible(true)
+        .setPosition(
+          farmhouseRect.x + farmhouseRect.w * 0.56,
+          farmhouseRect.y + farmhouseRect.h * 0.94,
+        )
+        .setSize(farmhouseRect.w * 0.92, farmhouseRect.h * 0.22);
+      this.windowGlow
+        .setVisible(true)
+        .setPosition(windowRect.x, windowRect.y)
+        .setDisplaySize(windowRect.w, windowRect.h);
+    } else {
+      this.farmhouseImage.setVisible(false);
+      this.farmhouseShadow.setVisible(false);
+      this.windowGlow.setVisible(false);
+    }
 
     this.slotImages.forEach((slotImage, index) => {
       const slot = slotRects[index];
@@ -1234,8 +1288,9 @@ export class BarnScene extends Phaser.Scene {
       } else {
         if (!this.hasDoneFirstDraw) {
           this.hasDoneFirstDraw = true;
-          const { cw, ch } = this.getCanvasSize();
-          this.createActionButtons(true, cw, ch);
+          this.setDrawButtonLabel(true);
+          this.revealEndNightButton(true);
+          this.enableButtons();
         } else {
           this.enableButtons();
         }
@@ -1296,7 +1351,7 @@ export class BarnScene extends Phaser.Scene {
 
     // NOISY! stripe overlay at top of card
     if (animalDef.noisy) {
-      const stripeHeight = Math.max(14, Math.round((20 / 104) * slot.h));
+      const stripeHeight = Math.max(16, Math.round(slot.h * 0.1));
       const stripe = this.add
         .image(0, 0, TEXTURES.BADGE_NOISY_STRIPE)
         .setOrigin(0)
@@ -1312,45 +1367,46 @@ export class BarnScene extends Phaser.Scene {
       container.add(noisyLabel);
     }
 
-    // Animal glyph texture centered in card
-    const spriteY = animalDef.noisy ? slot.h / 2 - 2 : slot.h / 2 - 8;
+    // Animal glyph texture in upper portion of the card, scaled to stay in bounds.
+    const maxEmojiSize = Math.min(slot.w, slot.h) * 0.38;
+    const spriteScale = maxEmojiSize / 128;
     const sprite = this.add
-      .image(slot.w / 2, spriteY, card.animalId)
+      .image(slot.w / 2, Math.round(slot.h * 0.35), card.animalId)
       .setOrigin(0.5)
-      .setScale(2);
+      .setScale(spriteScale);
     container.add(sprite);
 
-    // Name strip at bottom (h=20)
-    const nameY = slot.h - 10;
+    // Name in the lower-middle zone.
+    const nameY = Math.round(slot.h * 0.7);
     const nameText = this.addBitmapText(
       slot.w / 2,
       nameY,
       animalDef.name,
-      this.fontPx(10, ch),
+      this.fontPx(12, ch),
       TEXT_DARK_TINT,
     )
       .setOrigin(0.5)
-      .setMaxWidth(slot.w - 8);
+      .setMaxWidth(slot.w - 12);
     container.add(nameText);
 
-    // Resource badges (32px, gold for Mischief top-left, green for Hay top-right)
-    const badgeY = animalDef.noisy
-      ? Math.round((22 / 104) * slot.h)
-      : Math.round((4 / 104) * slot.h);
-    const badgeSize = Math.max(24, Math.round((LAYOUT.BADGE.DIAMETER / 96) * slot.w));
+    // Resource badges in the lower card zone.
+    const badgeCenterY = Math.round(slot.h * 0.85);
+    const badgeSize = Math.max(18, Math.round(slot.w * 0.19));
+    const leftBadgeX = Math.round(slot.w * 0.3);
+    const rightBadgeX = Math.round(slot.w * 0.7);
     if (animalDef.mischief !== 0) {
       const badge = this.add
-        .image(Math.round((4 / 96) * slot.w), badgeY, TEXTURES.BADGE_MISCHIEF_LG)
-        .setOrigin(0)
+        .image(leftBadgeX, badgeCenterY, TEXTURES.BADGE_MISCHIEF_LG)
+        .setOrigin(0.5)
         .setDisplaySize(badgeSize, badgeSize);
       container.add(badge);
       const val = this.add
         .bitmapText(
-          Math.round((20 / 96) * slot.w),
-          badgeY + badgeSize / 2,
+          leftBadgeX,
+          badgeCenterY,
           'pixel-font',
           `${animalDef.mischief}`,
-          this.fontPx(12, ch),
+          this.fontPx(10, ch),
         )
         .setTint(TEXT_DARK_TINT)
         .setOrigin(0.5);
@@ -1359,17 +1415,17 @@ export class BarnScene extends Phaser.Scene {
 
     if (animalDef.hay !== 0) {
       const badge = this.add
-        .image(slot.w - badgeSize - Math.round((4 / 96) * slot.w), badgeY, TEXTURES.BADGE_HAY_LG)
-        .setOrigin(0)
+        .image(rightBadgeX, badgeCenterY, TEXTURES.BADGE_HAY_LG)
+        .setOrigin(0.5)
         .setDisplaySize(badgeSize, badgeSize);
       container.add(badge);
       const val = this.add
         .bitmapText(
-          slot.w - Math.round((20 / 96) * slot.w),
-          badgeY + badgeSize / 2,
+          rightBadgeX,
+          badgeCenterY,
           'pixel-font',
           `${animalDef.hay}`,
-          this.fontPx(12, ch),
+          this.fontPx(10, ch),
         )
         .setTint(TEXT_DARK_TINT)
         .setOrigin(0.5);
@@ -1388,8 +1444,8 @@ export class BarnScene extends Phaser.Scene {
         chipTexture = TEXTURES.ABILITY_STRIP_TRIGGERED;
         chipTextColor = TEXT_DARK_TINT;
       }
-      const chipY = slot.h - Math.round((24 / 104) * slot.h);
-      const chipH = Math.max(12, Math.round((14 / 104) * slot.h));
+      const chipH = Math.max(12, Math.round(slot.h * 0.08));
+      const chipY = slot.h - chipH - Math.max(4, Math.round(slot.h * 0.03));
       const chip = this.add.image(0, chipY, chipTexture).setOrigin(0).setDisplaySize(slot.w, chipH);
       container.add(chip);
       const chipLabel = this.addBitmapText(
@@ -1404,11 +1460,11 @@ export class BarnScene extends Phaser.Scene {
 
     // Legendary shimmer border
     if (animalDef.tier === 'legendary') {
-      const starSize = Math.max(12, Math.round((16 / 96) * slot.w));
+      const starSize = Math.max(12, Math.round(slot.w * 0.15));
       const star = this.add
         .image(
-          slot.w - Math.round((14 / 96) * slot.w),
-          Math.round((6 / 104) * slot.h),
+          slot.w - Math.max(10, Math.round(slot.w * 0.12)),
+          Math.max(4, Math.round(slot.h * 0.03)),
           TEXTURES.BADGE_STAR,
         )
         .setOrigin(0.5, 0)
@@ -1451,7 +1507,7 @@ export class BarnScene extends Phaser.Scene {
     if (ability.trigger === 'manual' && !card.abilityUsed && !this.isAnimating) {
       const tapIndicator = this.addBitmapText(
         slot.w / 2,
-        slot.h - Math.round((38 / 104) * slot.h),
+        Math.round(slot.h * 0.62),
         'TAP',
         this.fontPx(8, ch),
         PALETTE.LEGENDARY_BORDER,
@@ -1736,12 +1792,22 @@ export class BarnScene extends Phaser.Scene {
 
     // Preview card centered above action bar
     const cx = cw / 2;
-    const buttonLayout = getActionBarPosition(session.capacity, true, cw, ch);
-    const secondaryButtonRect = buttonLayout.secondary ?? buttonLayout.primary;
-    const cy = Math.max(
-      Math.round(ch * 0.42),
-      buttonLayout.primary.y - previewH - Math.round(ch * 0.06),
-    );
+    const actionBar = getActionBarPosition(session.capacity, false, cw, ch).primary;
+    const decisionGap = 14;
+    const decisionW = Math.max(120, Math.floor((actionBar.w - decisionGap) / 2));
+    const acceptRect = {
+      x: actionBar.x,
+      y: actionBar.y,
+      w: decisionW,
+      h: actionBar.h,
+    };
+    const rejectRect = {
+      x: actionBar.x + decisionW + decisionGap,
+      y: actionBar.y,
+      w: decisionW,
+      h: actionBar.h,
+    };
+    const cy = Math.max(Math.round(ch * 0.42), actionBar.y - previewH - Math.round(ch * 0.06));
 
     let cardBgTexture: string;
     if (animalDef.tier === 'legendary') {
@@ -1783,45 +1849,35 @@ export class BarnScene extends Phaser.Scene {
 
     // Accept button (green)
     const acceptBtn = this.add
-      .image(buttonLayout.primary.x, buttonLayout.primary.y, TEXTURES.BUTTON_PRIMARY)
+      .image(acceptRect.x, acceptRect.y, TEXTURES.BUTTON_PRIMARY)
       .setOrigin(0)
-      .setDisplaySize(buttonLayout.primary.w, buttonLayout.primary.h)
+      .setDisplaySize(acceptRect.w, acceptRect.h)
       .setInteractive();
     overlay.add(acceptBtn);
 
     const acceptLabel = this.add
-      .text(
-        buttonLayout.primary.x + buttonLayout.primary.w / 2,
-        buttonLayout.primary.y + buttonLayout.primary.h / 2,
-        'ACCEPT',
-        {
-          ...TEXT_STYLE_LIGHT,
-          fontSize: this.fontPx(16, ch),
-          fontStyle: 'bold',
-        },
-      )
+      .text(acceptRect.x + acceptRect.w / 2, acceptRect.y + acceptRect.h / 2, 'ACCEPT', {
+        ...TEXT_STYLE_LIGHT,
+        fontSize: this.fontPx(16, ch),
+        fontStyle: 'bold',
+      })
       .setOrigin(0.5);
     overlay.add(acceptLabel);
 
     // Reject button (red)
     const rejectBtn = this.add
-      .image(secondaryButtonRect.x, secondaryButtonRect.y, TEXTURES.BUTTON_DANGER)
+      .image(rejectRect.x, rejectRect.y, TEXTURES.BUTTON_DANGER)
       .setOrigin(0)
-      .setDisplaySize(secondaryButtonRect.w, secondaryButtonRect.h)
+      .setDisplaySize(rejectRect.w, rejectRect.h)
       .setInteractive();
     overlay.add(rejectBtn);
 
     const rejectLabel = this.add
-      .text(
-        secondaryButtonRect.x + secondaryButtonRect.w / 2,
-        secondaryButtonRect.y + secondaryButtonRect.h / 2,
-        'REJECT',
-        {
-          ...TEXT_STYLE_LIGHT,
-          fontSize: this.fontPx(16, ch),
-          fontStyle: 'bold',
-        },
-      )
+      .text(rejectRect.x + rejectRect.w / 2, rejectRect.y + rejectRect.h / 2, 'REJECT', {
+        ...TEXT_STYLE_LIGHT,
+        fontSize: this.fontPx(16, ch),
+        fontStyle: 'bold',
+      })
       .setOrigin(0.5);
     overlay.add(rejectLabel);
 
@@ -2391,7 +2447,7 @@ export class BarnScene extends Phaser.Scene {
   // === Window glow ===
 
   private startWindowGlow(): void {
-    if (!this.windowGlowTween) {
+    if (this.windowGlow.visible && !this.windowGlowTween) {
       this.windowGlow.setAlpha(0.3);
       this.windowGlowTween = this.tweens.add({
         targets: this.windowGlow,
@@ -2516,6 +2572,7 @@ export class BarnScene extends Phaser.Scene {
     if (this.bustOverlay) return;
 
     this.hideBarnTooltip();
+    this.hideActionBar();
     const state = gameStore.getState();
     const { cw, ch } = this.getCanvasSize();
     const bounds = getOverlayBounds(state.capacity, cw, ch);
@@ -2590,6 +2647,7 @@ export class BarnScene extends Phaser.Scene {
     if (this.winOverlay) return;
 
     this.hideBarnTooltip();
+    this.hideActionBar();
     const { cw, ch } = this.getCanvasSize();
 
     // Camera zoom burst
@@ -2716,6 +2774,7 @@ export class BarnScene extends Phaser.Scene {
     if (this.summaryOverlay) return;
 
     this.hideBarnTooltip();
+    this.hideActionBar();
     const { cw, ch } = this.getCanvasSize();
     const bounds = getOverlayBounds(session.capacity, cw, ch);
     const overlay = this.add.container(bounds.x, bounds.y);

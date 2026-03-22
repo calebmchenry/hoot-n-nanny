@@ -89,6 +89,76 @@ export function showAbilityTooltip(
   return container;
 }
 
+export function showStatTooltip(
+  scene: Phaser.Scene,
+  x: number,
+  y: number,
+  animalDef: AnimalDef,
+  mischief: number,
+  hay: number,
+  cw: number,
+  ch: number,
+): Phaser.GameObjects.Container {
+  const panelW = clamp(Math.round((180 / LAYOUT.CANVAS.REF_WIDTH) * cw), 140, 240);
+  const panelH = clamp(Math.round((68 / LAYOUT.CANVAS.REF_HEIGHT) * ch), 60, 110);
+  const margin = Math.max(8, Math.round((8 / LAYOUT.CANVAS.REF_WIDTH) * cw));
+  const gap = Math.max(10, Math.round((10 / LAYOUT.CANVAS.REF_HEIGHT) * ch));
+
+  const left = clamp(Math.round(x - panelW / 2), margin, cw - panelW - margin);
+  const aboveY = Math.round(y - panelH - gap);
+  const top = aboveY < margin ? Math.round(y + gap) : aboveY;
+
+  const container = scene.add
+    .container(left, top)
+    .setDepth(DEPTH.BUTTONS - 1)
+    .setAlpha(0);
+
+  const bg = scene.add.graphics();
+  bg.fillStyle(PALETTE.OVERLAY_WOOD, 0.9);
+  bg.fillRoundedRect(0, 0, panelW, panelH, 10);
+  bg.lineStyle(2, 0x5c4030, 1);
+  bg.strokeRoundedRect(1, 1, panelW - 2, panelH - 2, 10);
+  container.add(bg);
+
+  const titleFontSize = clamp(Math.round((13 / LAYOUT.CANVAS.REF_HEIGHT) * ch), 11, 18);
+  const title = scene.add
+    .text(10, 8, animalDef.name, {
+      fontFamily: 'sans-serif',
+      fontSize: `${titleFontSize}px`,
+      fontStyle: 'bold',
+      color: '#f8f3e5',
+    })
+    .setOrigin(0, 0);
+
+  const statFontSize = clamp(Math.round((11 / LAYOUT.CANVAS.REF_HEIGHT) * ch), 10, 16);
+  const mischiefLine = scene.add
+    .text(10, 30, `+${mischief} Mischief`, {
+      fontFamily: 'sans-serif',
+      fontSize: `${statFontSize}px`,
+      color: '#c94040',
+    })
+    .setOrigin(0, 0);
+
+  const hayLine = scene.add
+    .text(10, 46, `+${hay} Hay`, {
+      fontFamily: 'sans-serif',
+      fontSize: `${statFontSize}px`,
+      color: '#c4982a',
+    })
+    .setOrigin(0, 0);
+
+  container.add([title, mischiefLine, hayLine]);
+
+  scene.tweens.add({
+    targets: container,
+    alpha: 1,
+    duration: 100,
+    ease: 'Sine.easeOut',
+  });
+
+  return container;
+}
+
 export function hideAbilityTooltip(
   scene: Phaser.Scene,
   tooltip: Phaser.GameObjects.Container,

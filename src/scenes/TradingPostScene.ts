@@ -22,7 +22,7 @@ import {
   getTabButtonPositions,
   scaledShopFont,
 } from './tradingPostLayout';
-import { showAbilityTooltip, hideAbilityTooltip as dismissAbilityTooltip } from './tooltipHelper';
+import { showAbilityTooltip, showStatTooltip, hideAbilityTooltip as dismissAbilityTooltip } from './tooltipHelper';
 
 const TEXT_LIGHT_TINT = 0xf8f3e5;
 const TEXT_DARK_TINT = 0x241611;
@@ -188,10 +188,6 @@ export class TradingPostScene extends Phaser.Scene {
   private showShopCardTooltip(cardView: ShopCardView): boolean {
     const animalDef = getAnimalDef(cardView.item.animalId);
     const ability = ABILITY_REGISTRY[animalDef.abilityKind];
-    if (ability.kind === 'none') {
-      this.hideShopTooltip();
-      return false;
-    }
 
     if (this.tooltipAnimalId === cardView.item.animalId && this.abilityTooltip?.active) {
       return true;
@@ -200,7 +196,14 @@ export class TradingPostScene extends Phaser.Scene {
     const { cw, ch } = this.getCanvasSize();
     const anchor = this.getShopCardTooltipAnchor(cardView);
     this.hideShopTooltip();
-    this.abilityTooltip = showAbilityTooltip(this, anchor.x, anchor.y, animalDef, ability, cw, ch);
+
+    if (ability.kind === 'none') {
+      this.abilityTooltip = showStatTooltip(
+        this, anchor.x, anchor.y, animalDef, cardView.item.mischief, cardView.item.hay, cw, ch,
+      );
+    } else {
+      this.abilityTooltip = showAbilityTooltip(this, anchor.x, anchor.y, animalDef, ability, cw, ch);
+    }
     this.tooltipAnimalId = cardView.item.animalId;
     return true;
   }
@@ -222,15 +225,7 @@ export class TradingPostScene extends Phaser.Scene {
     }
 
     this.mobilePreviewAnimalId = cardView.item.animalId;
-    const didShowTooltip = this.showShopCardTooltip(cardView);
-    if (!didShowTooltip) {
-      cardView.bg.setTint(0xeeeeee);
-      this.time.delayedCall(120, () => {
-        if (cardView.bg.active) {
-          cardView.bg.clearTint();
-        }
-      });
-    }
+    this.showShopCardTooltip(cardView);
   }
 
   private handleGlobalPointerDown(
@@ -501,9 +496,9 @@ export class TradingPostScene extends Phaser.Scene {
 
     const bg = this.add.image(0, 0, bgTexture).setOrigin(0);
     const sprite = this.add.image(0, 0, item.animalId).setOrigin(0.5);
-    const nameText = this.addBitmapText(0, 0, item.name, this.fontPx(10, ch), TEXT_DARK_TINT)
+    const nameText = this.addBitmapText(0, 0, item.name, this.fontPx(11, ch), TEXT_DARK_TINT)
       .setOrigin(0.5, 0)
-      .setMaxWidth(Math.max(36, pos.w - 8));
+      .setMaxWidth(Math.max(44, pos.w - 16));
 
     const costBadge = this.add.image(0, 0, TEXTURES.BADGE_MISCHIEF).setOrigin(0, 0.5);
     const costText = this.addBitmapText(
@@ -518,23 +513,23 @@ export class TradingPostScene extends Phaser.Scene {
       0,
       0,
       `+${item.mischief}M`,
-      this.fontPx(9, ch),
-      TEXT_DARK_TINT,
-    ).setOrigin(1, 0.5);
+      this.fontPx(10, ch),
+      PALETTE.STAT_MISCHIEF,
+    ).setOrigin(0.5, 0.5);
 
     const hayLabel = this.addBitmapText(
       0,
       0,
       `+${item.hay}H`,
-      this.fontPx(9, ch),
-      TEXT_DARK_TINT,
-    ).setOrigin(1, 0.5);
+      this.fontPx(10, ch),
+      PALETTE.STAT_HAY,
+    ).setOrigin(0.5, 0.5);
 
     const stockText = this.addBitmapText(
       0,
       0,
       `x${item.remainingStock}`,
-      this.fontPx(9, ch),
+      this.fontPx(10, ch),
       TEXT_DARK_TINT,
     ).setOrigin(0.5, 0.5);
 
@@ -544,7 +539,7 @@ export class TradingPostScene extends Phaser.Scene {
         0,
         0,
         ability.label,
-        this.fontPx(8, ch),
+        this.fontPx(10, ch),
         ability.trigger === 'on_enter' || ability.trigger === 'manual'
           ? 0x4d8fbf
           : ability.trigger === 'passive'
@@ -604,47 +599,53 @@ export class TradingPostScene extends Phaser.Scene {
     cardView.container.setPosition(pos.x, pos.y);
     cardView.bg.setDisplaySize(pos.w, pos.h);
 
-    const badgeSize = Math.max(16, Math.round((18 / 108) * pos.h));
-    const spriteY = Math.round(pos.h * 0.3);
-    const maxEmojiSize = Math.min(pos.w, pos.h) * 0.38;
+    const badgeSize = Math.max(14, Math.round(pos.h * 0.1));
+    const topZoneSpriteY = Math.round(pos.h * 0.18);
+    const maxEmojiSize = Math.min(pos.w, pos.h) * 0.28;
     const spriteScale = maxEmojiSize / 128;
 
-    cardView.sprite.setPosition(pos.w / 2, spriteY).setScale(spriteScale);
+    cardView.sprite.setPosition(pos.w / 2, topZoneSpriteY).setScale(spriteScale);
 
-    const nameY = Math.round(pos.h * 0.5);
+    const nameY = Math.round(pos.h * 0.38);
     cardView.nameText
       .setPosition(pos.w / 2, nameY)
       .setFontSize(this.fontPx(10, ch))
-      .setMaxWidth(Math.max(36, pos.w - 8));
+      .setMaxWidth(Math.max(44, pos.w - 12));
 
-    const costY = pos.h - 22;
-    cardView.costBadge.setPosition(6, costY).setDisplaySize(badgeSize, badgeSize);
-    cardView.costText.setPosition(6 + badgeSize + 4, costY).setFontSize(this.fontPx(10, ch));
+    const costRowY = Math.round(pos.h * 0.50);
+    cardView.costBadge.setPosition(6, costRowY).setDisplaySize(badgeSize, badgeSize);
+    cardView.costText.setPosition(6 + badgeSize + 3, costRowY).setFontSize(this.fontPx(9, ch));
+
+    const mischiefRowY = Math.round(pos.h * 0.60);
+    const hayRowY = Math.round(pos.h * 0.68);
 
     cardView.mischiefLabel
       .setVisible(true)
       .setText(`+${cardView.item.mischief}M`)
-      .setPosition(pos.w - 8, pos.h - 34)
-      .setFontSize(this.fontPx(9, ch));
+      .setPosition(pos.w / 2, mischiefRowY)
+      .setFontSize(this.fontPx(9, ch))
+      .setOrigin(0.5, 0.5);
     cardView.hayLabel
       .setVisible(true)
       .setText(`+${cardView.item.hay}H`)
-      .setPosition(pos.w - 8, pos.h - 20)
-      .setFontSize(this.fontPx(9, ch));
+      .setPosition(pos.w / 2, hayRowY)
+      .setFontSize(this.fontPx(9, ch))
+      .setOrigin(0.5, 0.5);
     cardView.stockText
-      .setPosition(pos.w / 2, pos.h - 8)
+      .setPosition(pos.w / 2, Math.round(pos.h * 0.90))
       .setOrigin(0.5, 0.5)
       .setFontSize(this.fontPx(9, ch));
     if (cardView.abilityLabel) {
       cardView.abilityLabel
         .setVisible(true)
-        .setPosition(pos.w / 2, Math.round(pos.h * 0.7))
-        .setFontSize(this.fontPx(8, ch));
+        .setPosition(pos.w / 2, Math.round(pos.h * 0.79))
+        .setMaxWidth(Math.max(44, pos.w - 10))
+        .setFontSize(this.fontPx(9, ch));
     }
 
     if (cardView.star) {
-      const starSize = Math.max(12, Math.round((14 / 108) * pos.h));
-      cardView.star.setPosition(pos.w - 12, 4).setDisplaySize(starSize, starSize);
+      const starSize = Math.max(12, Math.round(pos.h * 0.09));
+      cardView.star.setPosition(pos.w - 10, 5).setDisplaySize(starSize, starSize);
     }
 
     this.refreshShopCardInteractivity(cardView, pos);

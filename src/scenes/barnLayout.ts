@@ -32,15 +32,18 @@ const clamp = (value: number, min: number, max: number): number => {
 
 const getSlotSize = (cw: number, ch: number): { w: number; h: number } => {
   if (cw >= 700) {
-    return { w: 112, h: 122 };
+    return { w: 130, h: 234 };
   }
 
-  // Keep near-reference portrait phones visually aligned with the 390x844 baseline.
   if (cw >= 420 || ch >= 820) {
-    return { w: 96, h: 104 };
+    return { w: 106, h: 190 };
   }
 
-  return { w: 80, h: 87 };
+  if (ch < 740) {
+    return { w: 78, h: 140 };
+  }
+
+  return { w: 88, h: 158 };
 };
 
 export const scaledFont = (basePx: number, ch: number): number => {
@@ -85,15 +88,17 @@ const getSlotLayout = (
     startX = round((cw - gridW) / 2);
   }
 
-  const compressRows = capacity >= 7 && !(cw === REF_W && ch === REF_H);
-  const rowGapBase = compressRows ? 8 : 14;
-  const rowGap = Math.max(compressRows ? 6 : 8, round((rowGapBase / REF_H) * ch));
+  const compactRows = capacity >= 7;
+  const rowGapBase = compactRows ? 10 : LAYOUT.SLOT.ROW_GAP;
+  const rowGap = Math.max(compactRows ? 8 : 10, round((rowGapBase / REF_H) * ch));
 
   const noise = getNoiseMeterPosition(capacity, cw, ch);
-  const topY = Math.max(
-    round((156 / REF_H) * ch),
-    noise.y + noise.h + Math.max(24, round((42 / REF_H) * ch)),
-  );
+  const minTop = noise.y + noise.h + Math.max(12, round(((compactRows ? 20 : 42) / REF_H) * ch));
+  const baseTop = round(((compactRows ? 150 : LAYOUT.SLOT.START_Y) / REF_H) * ch);
+  const actionBarTop = getActionBarPosition(capacity, false, cw, ch).primary.y;
+  const gridHeight = rows.length * slotSize.h + (rows.length - 1) * rowGap;
+  const maxTop = actionBarTop - gridHeight - Math.max(6, round((8 / REF_H) * ch));
+  const topY = clamp(Math.max(baseTop, minTop), minTop, Math.max(minTop, maxTop));
 
   return {
     rows,
@@ -143,38 +148,44 @@ export const getNoiseMeterPosition = (capacity: number, cw: number, ch: number):
 };
 
 export const getDeckStackPosition = (capacity: number, cw: number, ch: number): Rect => {
-  const { slotW, slotH } = getSlotLayout(capacity, cw, ch);
+  const slotLayout = getSlotLayout(capacity, cw, ch);
   const noise = getNoiseMeterPosition(capacity, cw, ch);
 
-  const w = clamp(round((64 / 96) * slotW), 52, 90);
-  const h = clamp(round((82 / 104) * slotH), 66, 112);
-  const margin = round((20 / REF_W) * cw);
+  const margin = Math.max(10, round((12 / REF_W) * cw));
+  const w = clamp(round((48 / REF_W) * cw), 44, 64);
+  const h = clamp(round((82 / 64) * w), 58, 82);
 
   const x = cw - margin - w;
-  const y = Math.max(round((106 / REF_H) * ch), noise.y + Math.max(12, round((20 / REF_H) * ch)));
+  const baselineY = noise.y + round((noise.h - h) / 2);
+  const maxY = slotLayout.topY - h - Math.max(4, round((6 / REF_H) * ch));
+  const y = clamp(baselineY, round((18 / REF_H) * ch), maxY);
 
   return toRect(x, y, w, h);
 };
 
 export const getFarmhouseRect = (capacity: number, cw: number, ch: number): Rect => {
+  if (capacity >= 7) {
+    return toRect(0, 0, 0, 0);
+  }
+
   const slots = getDynamicSlotRects(capacity, cw, ch);
   const slotsBottom = Math.max(...slots.map((slot) => slot.y + slot.h));
 
   if (cw >= 900) {
-    const margin = Math.max(20, round((20 / REF_W) * cw));
-    const w = clamp(round(cw * 0.18), 180, 320);
-    const h = round((w * 116) / 142);
+    const margin = Math.max(20, round((24 / REF_W) * cw));
+    const w = clamp(round((LAYOUT.FARMHOUSE.WIDTH / REF_W) * cw), 130, 220);
+    const h = round((w * LAYOUT.FARMHOUSE.HEIGHT) / LAYOUT.FARMHOUSE.WIDTH);
     const x = cw - margin - w;
-    const y = clamp(round(ch * 0.36), round(ch * 0.22), round(ch * 0.7) - h);
+    const y = clamp(round(ch * 0.42), round(ch * 0.24), round(ch * 0.74) - h);
     return toRect(x, y, w, h);
   }
 
-  const w = round((142 / REF_W) * cw);
-  const h = round((116 / REF_H) * ch);
-  const x = round((24 / REF_W) * cw);
+  const w = round((LAYOUT.FARMHOUSE.WIDTH / REF_W) * cw);
+  const h = round((LAYOUT.FARMHOUSE.HEIGHT / REF_H) * ch);
+  const x = round((LAYOUT.FARMHOUSE.X / REF_W) * cw);
   const y = Math.max(
-    round((560 / REF_H) * ch),
-    slotsBottom + Math.max(10, round((22 / REF_H) * ch)),
+    round((LAYOUT.FARMHOUSE.Y / REF_H) * ch),
+    slotsBottom + Math.max(8, round((16 / REF_H) * ch)),
   );
 
   return toRect(x, y, w, h);
@@ -182,35 +193,36 @@ export const getFarmhouseRect = (capacity: number, cw: number, ch: number): Rect
 
 export const getActionBarPosition = (
   _capacity: number,
-  dualButtons: boolean,
+  _dualButtons: boolean,
   cw: number,
   ch: number,
 ): ActionBarLayout => {
   const y = round(ch - 86);
   const h = 56;
   const x = 20;
-
-  if (!dualButtons) {
-    const w = Math.max(LAYOUT.TAP_TARGET_MIN, cw - 40);
-    return {
-      primary: toRect(x, y, w, h),
-      secondary: null,
-    };
-  }
-
-  const gap = 14;
-  const buttonWidth = Math.max(LAYOUT.TAP_TARGET_MIN, round((cw - 54) / 2));
+  const w = Math.max(LAYOUT.TAP_TARGET_MIN, cw - 40);
 
   return {
-    primary: toRect(x, y, buttonWidth, h),
-    secondary: toRect(x + buttonWidth + gap, y, buttonWidth, h),
+    primary: toRect(x, y, w, h),
+    secondary: null,
   };
+};
+
+export const getEndNightPosition = (capacity: number, cw: number, ch: number): Rect => {
+  const noise = getNoiseMeterPosition(capacity, cw, ch);
+  const w = LAYOUT.END_NIGHT_BUTTON.WIDTH;
+  const h = LAYOUT.END_NIGHT_BUTTON.HEIGHT;
+  const margin = round((20 / REF_W) * cw);
+  const x = cw - margin - w;
+  const y = noise.y + round((noise.h - h) / 2);
+
+  return toRect(x, y, w, h);
 };
 
 export const getOverlayBounds = (_capacity: number, cw: number, ch: number): Rect => {
   const margin = round((20 / REF_W) * cw);
   const top = round((120 / REF_H) * ch);
-  const bottom = round((144 / REF_H) * ch);
+  const bottom = round((60 / REF_H) * ch);
 
   const w = Math.min(600, cw - margin * 2);
   const h = Math.max(220, ch - top - bottom);
@@ -221,11 +233,15 @@ export const getOverlayBounds = (_capacity: number, cw: number, ch: number): Rec
 
 export const getFarmhouseWindowRect = (capacity: number, cw: number, ch: number): Rect => {
   const houseRect = getFarmhouseRect(capacity, cw, ch);
+  if (houseRect.w === 0 || houseRect.h === 0) {
+    return toRect(0, 0, 0, 0);
+  }
+
   return toRect(
-    houseRect.x + round((54 / 142) * houseRect.w),
-    houseRect.y + round((28 / 116) * houseRect.h),
-    round((34 / 142) * houseRect.w),
-    round((24 / 116) * houseRect.h),
+    houseRect.x + round((LAYOUT.FARMHOUSE.WINDOW.OFFSET_X / LAYOUT.FARMHOUSE.WIDTH) * houseRect.w),
+    houseRect.y + round((LAYOUT.FARMHOUSE.WINDOW.OFFSET_Y / LAYOUT.FARMHOUSE.HEIGHT) * houseRect.h),
+    round((LAYOUT.FARMHOUSE.WINDOW.WIDTH / LAYOUT.FARMHOUSE.WIDTH) * houseRect.w),
+    round((LAYOUT.FARMHOUSE.WINDOW.HEIGHT / LAYOUT.FARMHOUSE.HEIGHT) * houseRect.h),
   );
 };
 

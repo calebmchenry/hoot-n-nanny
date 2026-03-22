@@ -634,73 +634,86 @@ export const generateDeckBack = (scene: Phaser.Scene): void => {
 };
 
 export const generateFarmhouse = (scene: Phaser.Scene): void => {
-  createCanvasTexture(scene, TEXTURES.FARMHOUSE, 142, 116, (ctx) => {
-    ctx.fillStyle = '#37435c';
-    ctx.fillRect(18, 30, 106, 78);
+  const width = LAYOUT.FARMHOUSE.WIDTH;
+  const height = LAYOUT.FARMHOUSE.HEIGHT;
 
-    for (let y = 34; y < 102; y += 8) {
+  createCanvasTexture(scene, TEXTURES.FARMHOUSE, width, height, (ctx) => {
+    const bodyX = Math.round(width * 0.12);
+    const bodyY = Math.round(height * 0.34);
+    const bodyW = width - bodyX * 2;
+    const bodyH = height - bodyY - 3;
+
+    ctx.fillStyle = '#37435c';
+    ctx.fillRect(bodyX, bodyY, bodyW, bodyH);
+
+    for (let y = bodyY + 3; y < bodyY + bodyH - 2; y += 5) {
       ctx.fillStyle = 'rgba(255,255,255,0.08)';
-      ctx.fillRect(18, y, 106, 1);
+      ctx.fillRect(bodyX, y, bodyW, 1);
       ctx.fillStyle = 'rgba(0,0,0,0.18)';
-      ctx.fillRect(18, y + 7, 106, 1);
+      ctx.fillRect(bodyX, y + 4, bodyW, 1);
     }
 
+    const roofPeakX = Math.round(width * 0.5);
+    const roofPeakY = 2;
+    const roofLeftX = Math.round(width * 0.06);
+    const roofRightX = width - roofLeftX;
+    const roofY = bodyY + 1;
     ctx.fillStyle = '#5b2f24';
     ctx.beginPath();
-    ctx.moveTo(8, 32);
-    ctx.lineTo(71, 2);
-    ctx.lineTo(134, 32);
+    ctx.moveTo(roofLeftX, roofY);
+    ctx.lineTo(roofPeakX, roofPeakY);
+    ctx.lineTo(roofRightX, roofY);
     ctx.closePath();
     ctx.fill();
 
-    for (let row = 0; row < 5; row += 1) {
-      const y = 8 + row * 4;
-      const offset = row % 2 === 0 ? 0 : 5;
-      for (let x = 12 + offset; x <= 124; x += 10) {
+    const shingleH = 3;
+    for (let row = 0; row < 4; row += 1) {
+      const y = 6 + row * shingleH;
+      const tileW = 7;
+      const offset = row % 2 === 0 ? 0 : Math.round(tileW / 2);
+      for (let x = roofLeftX + 3 + offset; x <= roofRightX - 7; x += tileW) {
         ctx.fillStyle = '#6d3c2d';
-        ctx.fillRect(x, y, 10, 4);
-        ctx.fillStyle = 'rgba(0,0,0,0.25)';
-        ctx.fillRect(x, y + 3, 10, 1);
+        ctx.fillRect(x, y, tileW, shingleH);
+        ctx.fillStyle = 'rgba(0,0,0,0.22)';
+        ctx.fillRect(x, y + shingleH - 1, tileW, 1);
       }
     }
 
+    const doorW = Math.round(width * 0.2);
+    const doorH = Math.round(height * 0.33);
+    const doorX = Math.round(width * 0.5 - doorW / 2);
+    const doorY = height - doorH - 3;
     ctx.fillStyle = '#6d4731';
-    ctx.fillRect(60, 64, 22, 44);
+    ctx.fillRect(doorX, doorY, doorW, doorH);
     ctx.strokeStyle = '#9f7455';
-    ctx.strokeRect(60, 64, 22, 44);
+    ctx.strokeRect(doorX, doorY, doorW, doorH);
     ctx.fillStyle = '#e4bf7d';
-    ctx.fillRect(78, 84, 2, 2);
+    ctx.fillRect(doorX + doorW - 4, doorY + Math.round(doorH * 0.55), 2, 2);
 
-    const drawWindow = (x: number, y: number): void => {
-      ctx.fillStyle = '#28456a';
-      ctx.fillRect(x, y, 18, 14);
-      ctx.strokeStyle = '#d8c79f';
-      ctx.strokeRect(x, y, 18, 14);
-      ctx.fillStyle = 'rgba(255, 194, 112, 0.35)';
-      ctx.fillRect(x + 1, y + 1, 16, 12);
-      ctx.strokeStyle = '#d8c79f';
-      ctx.beginPath();
-      ctx.moveTo(x + 9, y);
-      ctx.lineTo(x + 9, y + 14);
-      ctx.moveTo(x, y + 7);
-      ctx.lineTo(x + 18, y + 7);
-      ctx.stroke();
-    };
+    const windowX = LAYOUT.FARMHOUSE.WINDOW.OFFSET_X;
+    const windowY = LAYOUT.FARMHOUSE.WINDOW.OFFSET_Y;
+    const windowW = LAYOUT.FARMHOUSE.WINDOW.WIDTH;
+    const windowH = LAYOUT.FARMHOUSE.WINDOW.HEIGHT;
+    ctx.fillStyle = '#28456a';
+    ctx.fillRect(windowX, windowY, windowW, windowH);
+    ctx.strokeStyle = '#d8c79f';
+    ctx.strokeRect(windowX, windowY, windowW, windowH);
+    ctx.fillStyle = 'rgba(255, 194, 112, 0.35)';
+    ctx.fillRect(windowX + 1, windowY + 1, windowW - 2, windowH - 2);
+    ctx.strokeStyle = '#d8c79f';
+    ctx.beginPath();
+    ctx.moveTo(windowX + Math.round(windowW / 2), windowY);
+    ctx.lineTo(windowX + Math.round(windowW / 2), windowY + windowH);
+    ctx.moveTo(windowX, windowY + Math.round(windowH / 2));
+    ctx.lineTo(windowX + windowW, windowY + Math.round(windowH / 2));
+    ctx.stroke();
 
-    drawWindow(32, 54);
-    drawWindow(92, 54);
-
+    const chimneyW = Math.max(8, Math.round(width * 0.12));
+    const chimneyH = Math.max(12, Math.round(height * 0.2));
+    const chimneyX = width - chimneyW - 10;
+    const chimneyY = 8;
     ctx.fillStyle = '#4f4c50';
-    ctx.fillRect(102, 10, 18, 24);
-
-    for (let row = 0; row < 8; row += 1) {
-      const y = 10 + row * 3;
-      const offset = row % 2 === 0 ? 0 : 3;
-      for (let x = 102 + offset; x < 120; x += 6) {
-        ctx.fillStyle = row % 2 === 0 ? '#655f63' : '#575055';
-        ctx.fillRect(x, y, 6, 3);
-      }
-    }
+    ctx.fillRect(chimneyX, chimneyY, chimneyW, chimneyH);
   });
 };
 

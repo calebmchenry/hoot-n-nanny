@@ -53,15 +53,15 @@ describe('tradingPostLayout', () => {
     });
   });
 
-  it('uses 2 columns at both narrow and wide widths', () => {
-    const small = getShopGridPositions(itemCount, 499, 844);
-    const wide = getShopGridPositions(itemCount, 500, 844);
+  it('uses 3 columns for large item counts and 2 for small', () => {
+    const large = getShopGridPositions(12, 390, 844);
+    const small = getShopGridPositions(6, 390, 844);
 
+    const uniqueXLarge = new Set(large.slice(0, 4).map((rect) => rect.x));
     const uniqueXSmall = new Set(small.slice(0, 3).map((rect) => rect.x));
-    const uniqueXWide = new Set(wide.slice(0, 3).map((rect) => rect.x));
 
+    expect(uniqueXLarge.size).toBe(3);
     expect(uniqueXSmall.size).toBe(2);
-    expect(uniqueXWide.size).toBe(2);
   });
 
   it('keeps Start Night button visible at all target viewports', () => {
@@ -70,6 +70,18 @@ describe('tradingPostLayout', () => {
       expect(startNight.y + startNight.h).toBeLessThan(ch);
       expect(startNight.w).toBeGreaterThan(0);
       expect(startNight.h).toBeGreaterThan(0);
+    });
+  });
+
+  it('produces tall card-shaped shop cards at reference viewport', () => {
+    const cards = getShopGridPositions(6, 390, 844);
+    expect(cards.length).toBe(6);
+    cards.forEach((card) => {
+      expect(card.w).toBeGreaterThanOrEqual(100);
+      expect(card.w).toBeLessThanOrEqual(175);
+      expect(card.h).toBeGreaterThanOrEqual(130);
+      expect(card.h).toBeLessThanOrEqual(240);
+      expect(card.h).toBeGreaterThan(card.w);
     });
   });
 });

@@ -29,4 +29,5 @@ updateRotatePrompt();
 
 gameContainer.querySelector('canvas')?.remove();
 
-new Phaser.Game(createGameConfig());
+const game = new Phaser.Game(createGameConfig());
+(window as unknown as Record<string, unknown>).__PHASER_GAME__ = game;

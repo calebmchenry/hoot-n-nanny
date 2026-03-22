@@ -4,6 +4,7 @@ import {
   getActionBarPosition,
   getDeckStackPosition,
   getDynamicSlotRects,
+  getEndNightPosition,
   getFarmhouseRect,
   getFarmhouseWindowRect,
   getInfoPanelBounds,
@@ -18,215 +19,146 @@ const overlaps = (a: Rect, b: Rect): boolean => {
   return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
 };
 
-const approxRect = (actual: Rect, expected: Rect, tolerance = 2): void => {
-  expect(actual.x).toBeGreaterThanOrEqual(expected.x - tolerance);
-  expect(actual.x).toBeLessThanOrEqual(expected.x + tolerance);
-  expect(actual.y).toBeGreaterThanOrEqual(expected.y - tolerance);
-  expect(actual.y).toBeLessThanOrEqual(expected.y + tolerance);
-  expect(actual.w).toBeGreaterThanOrEqual(expected.w - tolerance);
-  expect(actual.w).toBeLessThanOrEqual(expected.w + tolerance);
-  expect(actual.h).toBeGreaterThanOrEqual(expected.h - tolerance);
-  expect(actual.h).toBeLessThanOrEqual(expected.h + tolerance);
-};
-
 const capacities = [5, 6, 7, 8] as const;
 const viewports = [
   { cw: 375, ch: 667 },
+  { cw: 390, ch: 844 },
   { cw: 393, ch: 852 },
   { cw: 768, ch: 1024 },
   { cw: 1920, ch: 1080 },
 ];
 
-const LEGACY_SLOT_RECTS: Record<number, Rect[]> = {
-  5: [
-    { x: 39, y: 156, w: 96, h: 104 },
-    { x: 147, y: 156, w: 96, h: 104 },
-    { x: 255, y: 156, w: 96, h: 104 },
-    { x: 93, y: 274, w: 96, h: 104 },
-    { x: 201, y: 274, w: 96, h: 104 },
-  ],
-  6: [
-    { x: 39, y: 156, w: 96, h: 104 },
-    { x: 147, y: 156, w: 96, h: 104 },
-    { x: 255, y: 156, w: 96, h: 104 },
-    { x: 39, y: 274, w: 96, h: 104 },
-    { x: 147, y: 274, w: 96, h: 104 },
-    { x: 255, y: 274, w: 96, h: 104 },
-  ],
-  7: [
-    { x: 39, y: 156, w: 96, h: 104 },
-    { x: 147, y: 156, w: 96, h: 104 },
-    { x: 255, y: 156, w: 96, h: 104 },
-    { x: 39, y: 274, w: 96, h: 104 },
-    { x: 147, y: 274, w: 96, h: 104 },
-    { x: 255, y: 274, w: 96, h: 104 },
-    { x: 147, y: 392, w: 96, h: 104 },
-  ],
-  8: [
-    { x: 39, y: 156, w: 96, h: 104 },
-    { x: 147, y: 156, w: 96, h: 104 },
-    { x: 255, y: 156, w: 96, h: 104 },
-    { x: 39, y: 274, w: 96, h: 104 },
-    { x: 147, y: 274, w: 96, h: 104 },
-    { x: 255, y: 274, w: 96, h: 104 },
-    { x: 93, y: 392, w: 96, h: 104 },
-    { x: 201, y: 392, w: 96, h: 104 },
-  ],
-};
-
 describe('barnLayout', () => {
-  it('keeps 390x844 outputs within 2px of legacy hardcoded values', () => {
+  it('uses tarot-style slot dimensions at reference viewport', () => {
+    const slots = getDynamicSlotRects(5, 390, 844);
+    expect(slots).toHaveLength(5);
+    slots.forEach((slot) => {
+      expect(slot.w).toBe(106);
+      expect(slot.h).toBe(190);
+      expect(slot.h / slot.w).toBeGreaterThan(1.75);
+      expect(slot.h / slot.w).toBeLessThan(1.85);
+    });
+  });
+
+  it('keeps action bar as one full-width button regardless of dual flag', () => {
+    const single = getActionBarPosition(5, false, 390, 844);
+    const dual = getActionBarPosition(5, true, 390, 844);
+
+    expect(single.primary).toEqual({ x: 20, y: 758, w: 350, h: 56 });
+    expect(single.secondary).toBeNull();
+    expect(dual.primary).toEqual(single.primary);
+    expect(dual.secondary).toBeNull();
+  });
+
+  it('positions End Night near the top HUD lane and right aligned', () => {
     const cw = 390;
     const ch = 844;
+    const endNight = getEndNightPosition(5, cw, ch);
+    const noise = getNoiseMeterPosition(5, cw, ch);
+    const action = getActionBarPosition(5, false, cw, ch).primary;
 
+    expect(endNight.w).toBe(LAYOUT.END_NIGHT_BUTTON.WIDTH);
+    expect(endNight.h).toBe(LAYOUT.END_NIGHT_BUTTON.HEIGHT);
+    expect(endNight.x + endNight.w).toBeLessThanOrEqual(cw - 16);
+    expect(endNight.y).toBeLessThan(noise.y + noise.h);
+    expect(endNight.y + endNight.h).toBeLessThan(action.y);
+  });
+
+  it('shrinks farmhouse and hides it at capacity 7+', () => {
+    const visibleHouse = getFarmhouseRect(5, 390, 844);
+    expect(visibleHouse.w).toBe(85);
+    expect(visibleHouse.h).toBe(70);
+
+    const hiddenHouse7 = getFarmhouseRect(7, 390, 844);
+    const hiddenHouse8 = getFarmhouseRect(8, 390, 844);
+    expect(hiddenHouse7).toEqual({ x: 0, y: 0, w: 0, h: 0 });
+    expect(hiddenHouse8).toEqual({ x: 0, y: 0, w: 0, h: 0 });
+
+    const hiddenWindow = getFarmhouseWindowRect(8, 390, 844);
+    expect(hiddenWindow).toEqual({ x: 0, y: 0, w: 0, h: 0 });
+  });
+
+  it('extends overlay low enough to occlude action bar', () => {
     capacities.forEach((capacity) => {
-      const slots = getDynamicSlotRects(capacity, cw, ch);
-      const legacySlots = LEGACY_SLOT_RECTS[capacity];
-      expect(slots).toHaveLength(legacySlots.length);
-      slots.forEach((slot, index) => {
-        approxRect(slot, legacySlots[index]);
+      const overlay = getOverlayBounds(capacity, 390, 844);
+      const action = getActionBarPosition(capacity, false, 390, 844).primary;
+      expect(overlay.y + overlay.h).toBeGreaterThan(action.y);
+    });
+  });
+
+  it('keeps deck stack clear of the card slots', () => {
+    viewports.forEach(({ cw, ch }) => {
+      capacities.forEach((capacity) => {
+        const deck = getDeckStackPosition(capacity, cw, ch);
+        const slots = getDynamicSlotRects(capacity, cw, ch);
+
+        expect(deck.x).toBeGreaterThanOrEqual(0);
+        expect(deck.y).toBeGreaterThanOrEqual(0);
+        expect(deck.x + deck.w).toBeLessThanOrEqual(cw);
+        expect(deck.y + deck.h).toBeLessThanOrEqual(ch);
+
+        slots.forEach((slot) => {
+          expect(overlaps(deck, slot)).toBe(false);
+        });
       });
-
-      approxRect(getResourceBannerPosition(capacity, cw, ch), { x: 16, y: 16, w: 358, h: 64 });
-      approxRect(getNoiseMeterPosition(capacity, cw, ch), { x: 16, y: 86, w: 170, h: 28 });
-      approxRect(getDeckStackPosition(capacity, cw, ch), { x: 306, y: 106, w: 64, h: 82 });
-      approxRect(getFarmhouseRect(capacity, cw, ch), { x: 24, y: 560, w: 142, h: 116 });
-      approxRect(getFarmhouseWindowRect(capacity, cw, ch), { x: 78, y: 588, w: 34, h: 24 });
-      approxRect(getOverlayBounds(capacity, cw, ch), { x: 20, y: 120, w: 350, h: 580 });
-
-      const actionSingle = getActionBarPosition(capacity, false, cw, ch);
-      approxRect(actionSingle.primary, { x: 20, y: 758, w: 350, h: 56 });
-
-      const actionDual = getActionBarPosition(capacity, true, cw, ch);
-      approxRect(actionDual.primary, { x: 20, y: 758, w: 168, h: 56 });
-      expect(actionDual.secondary).not.toBeNull();
-      approxRect(actionDual.secondary as Rect, { x: 202, y: 758, w: 168, h: 56 });
-    });
-
-    approxRect(getInfoPanelBounds(cw, ch), { x: 12, y: 556, w: 366, h: 180 });
-  });
-
-  it('capacity 8 at 375x667 keeps slots in bounds and clear of farmhouse/action bar', () => {
-    const cw = 375;
-    const ch = 667;
-    const slots = getDynamicSlotRects(8, cw, ch);
-    const farmhouse = getFarmhouseRect(8, cw, ch);
-    const action = getActionBarPosition(8, false, cw, ch).primary;
-
-    slots.forEach((slot) => {
-      expect(slot.x).toBeGreaterThanOrEqual(0);
-      expect(slot.y).toBeGreaterThanOrEqual(0);
-      expect(slot.x + slot.w).toBeLessThanOrEqual(cw);
-      expect(slot.y + slot.h).toBeLessThanOrEqual(ch);
-      expect(overlaps(slot, farmhouse)).toBe(false);
-      expect(overlaps(slot, action)).toBe(false);
     });
   });
 
-  it('capacity 8 at 1920x1080 keeps slots centered and scaled up', () => {
-    const cw = 1920;
-    const ch = 1080;
-    const slots = getDynamicSlotRects(8, cw, ch);
+  it('keeps major regions in bounds and non-overlapping across viewport matrix', () => {
+    viewports.forEach(({ cw, ch }) => {
+      capacities.forEach((capacity) => {
+        const slots = getDynamicSlotRects(capacity, cw, ch);
+        const house = getFarmhouseRect(capacity, cw, ch);
+        const action = getActionBarPosition(capacity, false, cw, ch).primary;
+        const overlay = getOverlayBounds(capacity, cw, ch);
+        const endNight = getEndNightPosition(capacity, cw, ch);
+        const banner = getResourceBannerPosition(capacity, cw, ch);
 
-    const first = slots[0];
-    const last = slots[2];
-    const midX = (first.x + last.x + last.w) / 2;
+        [action, overlay, endNight, banner, ...slots].forEach((rect) => {
+          expect(rect.x).toBeGreaterThanOrEqual(0);
+          expect(rect.y).toBeGreaterThanOrEqual(0);
+          expect(rect.x + rect.w).toBeLessThanOrEqual(cw);
+          expect(rect.y + rect.h).toBeLessThanOrEqual(ch);
+        });
 
-    expect(first.w).toBeGreaterThanOrEqual(112);
-    expect(first.h).toBeGreaterThanOrEqual(122);
-    expect(Math.abs(midX - cw / 2)).toBeLessThanOrEqual(cw * 0.2);
+        slots.forEach((slot, index) => {
+          expect(overlaps(slot, action)).toBe(false);
+          if (house.w > 0 && house.h > 0) {
+            expect(overlaps(slot, house)).toBe(false);
+          }
+          for (let j = index + 1; j < slots.length; j += 1) {
+            expect(overlaps(slot, slots[j])).toBe(false);
+          }
+        });
+      });
+    });
   });
 
-  it('anchors action bar to bottom on small phone viewports', () => {
-    const action = getActionBarPosition(5, false, 375, 667).primary;
-    expect(action.y + action.h).toBeLessThan(667);
-    expect(action.y).toBe(667 - 86);
-  });
-
-  it('keeps info panel above action bar across viewport matrix', () => {
-    const viewportCases = [
-      { cw: 375, ch: 667 },
-      { cw: 393, ch: 852 },
-      { cw: 768, ch: 1024 },
-      { cw: 1920, ch: 1080 },
-    ];
-
-    viewportCases.forEach(({ cw, ch }) => {
+  it('keeps info panel above action bar', () => {
+    viewports.forEach(({ cw, ch }) => {
       const panel = getInfoPanelBounds(cw, ch);
       const action = getActionBarPosition(8, false, cw, ch).primary;
       expect(panel.y + panel.h).toBeLessThanOrEqual(action.y);
     });
   });
 
-  it('enforces >=44x44 interactive targets for slots and action buttons', () => {
+  it('enforces minimum 44x44 touch targets for interactive controls', () => {
     viewports.forEach(({ cw, ch }) => {
       capacities.forEach((capacity) => {
         const slots = getDynamicSlotRects(capacity, cw, ch);
+        const action = getActionBarPosition(capacity, false, cw, ch).primary;
+        const endNight = getEndNightPosition(capacity, cw, ch);
+
         slots.forEach((slot) => {
           expect(slot.w).toBeGreaterThanOrEqual(LAYOUT.TAP_TARGET_MIN);
           expect(slot.h).toBeGreaterThanOrEqual(LAYOUT.TAP_TARGET_MIN);
         });
 
-        const single = getActionBarPosition(capacity, false, cw, ch);
-        expect(single.primary.w).toBeGreaterThanOrEqual(LAYOUT.TAP_TARGET_MIN);
-        expect(single.primary.h).toBeGreaterThanOrEqual(LAYOUT.TAP_TARGET_MIN);
-
-        const dual = getActionBarPosition(capacity, true, cw, ch);
-        expect(dual.primary.w).toBeGreaterThanOrEqual(LAYOUT.TAP_TARGET_MIN);
-        expect(dual.primary.h).toBeGreaterThanOrEqual(LAYOUT.TAP_TARGET_MIN);
-        expect((dual.secondary as Rect).w).toBeGreaterThanOrEqual(LAYOUT.TAP_TARGET_MIN);
-        expect((dual.secondary as Rect).h).toBeGreaterThanOrEqual(LAYOUT.TAP_TARGET_MIN);
+        expect(action.w).toBeGreaterThanOrEqual(LAYOUT.TAP_TARGET_MIN);
+        expect(action.h).toBeGreaterThanOrEqual(LAYOUT.TAP_TARGET_MIN);
+        expect(endNight.w).toBeGreaterThanOrEqual(LAYOUT.TAP_TARGET_MIN);
+        expect(endNight.h).toBeGreaterThanOrEqual(LAYOUT.TAP_TARGET_MIN);
       });
     });
-  });
-
-  it('avoids overlap of major regions across capacities and viewports', () => {
-    viewports.forEach(({ cw, ch }) => {
-      capacities.forEach((capacity) => {
-        const slots = getDynamicSlotRects(capacity, cw, ch);
-        const farmhouse = getFarmhouseRect(capacity, cw, ch);
-        const action = getActionBarPosition(capacity, false, cw, ch).primary;
-        const overlay = getOverlayBounds(capacity, cw, ch);
-        const windowRect = getFarmhouseWindowRect(capacity, cw, ch);
-
-        slots.forEach((slot, index) => {
-          expect(slot.x).toBeGreaterThanOrEqual(0);
-          expect(slot.y).toBeGreaterThanOrEqual(0);
-          expect(slot.x + slot.w).toBeLessThanOrEqual(cw);
-          expect(slot.y + slot.h).toBeLessThanOrEqual(ch);
-          expect(overlaps(slot, farmhouse)).toBe(false);
-          expect(overlaps(slot, action)).toBe(false);
-
-          for (let j = index + 1; j < slots.length; j += 1) {
-            expect(overlaps(slot, slots[j])).toBe(false);
-          }
-        });
-
-        expect(farmhouse.x).toBeGreaterThanOrEqual(0);
-        expect(farmhouse.y).toBeGreaterThanOrEqual(0);
-        expect(farmhouse.x + farmhouse.w).toBeLessThanOrEqual(cw);
-        expect(farmhouse.y + farmhouse.h).toBeLessThanOrEqual(ch);
-
-        expect(action.x).toBeGreaterThanOrEqual(0);
-        expect(action.y).toBeGreaterThanOrEqual(0);
-        expect(action.x + action.w).toBeLessThanOrEqual(cw);
-        expect(action.y + action.h).toBeLessThanOrEqual(ch);
-
-        expect(overlay.x).toBeGreaterThanOrEqual(0);
-        expect(overlay.y).toBeGreaterThanOrEqual(0);
-        expect(overlay.x + overlay.w).toBeLessThanOrEqual(cw);
-        expect(overlay.y + overlay.h).toBeLessThanOrEqual(ch);
-
-        expect(windowRect.x).toBeGreaterThanOrEqual(0);
-        expect(windowRect.y).toBeGreaterThanOrEqual(0);
-        expect(windowRect.x + windowRect.w).toBeLessThanOrEqual(cw);
-        expect(windowRect.y + windowRect.h).toBeLessThanOrEqual(ch);
-      });
-    });
-  });
-
-  it('uses reference dimensions in constants', () => {
-    expect(LAYOUT.CANVAS.REF_WIDTH).toBe(390);
-    expect(LAYOUT.CANVAS.REF_HEIGHT).toBe(844);
   });
 });

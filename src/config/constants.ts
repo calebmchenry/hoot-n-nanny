@@ -4,12 +4,12 @@ export const LAYOUT = {
     REF_HEIGHT: 844,
   },
   SLOT: {
-    WIDTH: 96,
-    HEIGHT: 104,
+    WIDTH: 106,
+    HEIGHT: 190,
     GAP: 12,
     COLUMNS: 3,
     START_Y: 156,
-    ROW_GAP: 14,
+    ROW_GAP: 12,
     MAX_ROWS: 3,
   },
   BARN: {
@@ -21,13 +21,13 @@ export const LAYOUT = {
   FARMHOUSE: {
     X: 24,
     Y: 560,
-    WIDTH: 142,
-    HEIGHT: 116,
+    WIDTH: 85,
+    HEIGHT: 70,
     WINDOW: {
-      WIDTH: 34,
-      HEIGHT: 24,
-      OFFSET_X: 54,
-      OFFSET_Y: 28,
+      WIDTH: 20,
+      HEIGHT: 14,
+      OFFSET_X: 32,
+      OFFSET_Y: 17,
     },
   },
   ACTION_BAR: {
@@ -49,18 +49,22 @@ export const LAYOUT = {
     WIDTH: 350,
     HEIGHT: 580,
   },
+  END_NIGHT_BUTTON: {
+    WIDTH: 120,
+    HEIGHT: 44,
+  },
   SHOP: {
     GRID_X: 20,
     GRID_Y: 152,
     GRID_COLUMNS: 2,
-    CARD_WIDTH: 170,
-    CARD_HEIGHT: 108,
+    CARD_WIDTH: 150,
+    CARD_HEIGHT: 210,
     GRID_GAP_X: 10,
     GRID_GAP_Y: 10,
   },
   SHOP_CARD: {
-    TEX_WIDTH: 170,
-    TEX_HEIGHT: 200,
+    TEX_WIDTH: 150,
+    TEX_HEIGHT: 210,
   },
   BADGE: {
     DIAMETER: 32,
@@ -109,6 +113,8 @@ export const PALETTE = {
   ABILITY_ACTIVE: 0x2d6a9f,
   ABILITY_PASSIVE: 0x4a7c59,
   ABILITY_TRIGGERED: 0xc4982a,
+  STAT_MISCHIEF: 0xc94040,
+  STAT_HAY: 0x9e7a2e,
 } as const;
 
 export const ANIMATION = {

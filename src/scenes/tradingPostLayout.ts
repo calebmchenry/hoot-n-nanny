@@ -50,28 +50,29 @@ export const getShopGridPositions = (itemCount: number, cw: number, ch: number):
     return [];
   }
 
-  const columns = 2;
+  const columns = itemCount > 6 ? 3 : 2;
   const rows = Math.ceil(itemCount / columns);
 
   const marginX = getHorizontalMargin(cw);
   const gapX = clamp(round((10 / REF_W) * cw), 8, 26);
-  const gapY = clamp(round((10 / REF_H) * ch), 6, 16);
+  const gapY = clamp(round((8 / REF_H) * ch), 6, 14);
 
   const tabRect = getTabButtonPositions(cw, ch).animals;
   const capacityRect = getCapacityUpgradePosition(cw, ch);
 
-  const gridTop = tabRect.y + tabRect.h + Math.max(8, round((10 / REF_H) * ch));
-  const gridBottom = capacityRect.y - Math.max(8, round((8 / REF_H) * ch));
+  const gridTop = tabRect.y + tabRect.h + Math.max(4, round((4 / REF_H) * ch));
+  const gridBottom = capacityRect.y - Math.max(2, round((2 / REF_H) * ch));
 
   const availableW = cw - marginX * 2;
-  const cardW = Math.max(44, Math.floor((availableW - gapX * (columns - 1)) / columns));
+  const rawCardW = Math.floor((availableW - gapX * (columns - 1)) / columns);
+  const cardW = clamp(rawCardW, 44, LAYOUT.SHOP.CARD_WIDTH);
 
   const minNeededH = rows * 80 + (rows - 1) * gapY;
   const boundedBottom = Math.max(gridBottom, gridTop + minNeededH);
   const availableH = boundedBottom - gridTop;
   const fitCardH = Math.floor((availableH - gapY * (rows - 1)) / rows);
-  const ratioCardH = round(cardW * (130 / 170));
-  const cardH = clamp(Math.min(ratioCardH, fitCardH), 80, 200);
+  const ratioCardH = round(cardW * (LAYOUT.SHOP.CARD_HEIGHT / LAYOUT.SHOP.CARD_WIDTH));
+  const cardH = clamp(Math.min(ratioCardH, fitCardH), LAYOUT.TAP_TARGET_MIN, 240);
 
   const usedHeight = rows * cardH + (rows - 1) * gapY;
   const startY = gridTop + Math.max(0, Math.floor((availableH - usedHeight) / 2));
@@ -96,7 +97,7 @@ export const getShopGridPositions = (itemCount: number, cw: number, ch: number):
 export const getCapacityUpgradePosition = (cw: number, ch: number): Rect => {
   const startNight = getStartNightButtonPosition(cw, ch);
   const h = 56;
-  const y = startNight.y - h - Math.max(10, round((14 / REF_H) * ch));
+  const y = startNight.y - h - Math.max(6, round((8 / REF_H) * ch));
   return rect(startNight.x, y, startNight.w, h);
 };
 
