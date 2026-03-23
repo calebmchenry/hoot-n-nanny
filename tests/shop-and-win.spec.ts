@@ -20,7 +20,7 @@ test('shop purchase round-trip adds animal to next night farm', async ({ page })
       continue;
     }
 
-    const name = (await card.locator('h3').innerText()).trim();
+    const name = ((await card.locator('h3').textContent()) ?? '').trim();
     if (name === 'Chicken' || name === 'Pig') {
       continue;
     }

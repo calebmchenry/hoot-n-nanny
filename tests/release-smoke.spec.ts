@@ -26,7 +26,7 @@ test('bust flow pins a guest and excludes it from the next night draw', async ({
   await page.getByTestId('invite-button').click();
 
   await expect(page.getByText('Pin one guest for next night')).toBeVisible();
-  await page.getByRole('button', { name: 'Goose' }).click();
+  await page.locator('.targeting-overlay').getByRole('button', { name: 'Goose' }).click();
 
   await expect(page.getByTestId('summary-card')).toBeVisible();
   await page.getByTestId('continue-from-summary').click();
@@ -108,7 +108,7 @@ test('loss-path run has no console errors or warnings', async ({ page }) => {
   await page.getByTestId('invite-button').click();
   await page.getByTestId('invite-button').click();
 
-  await page.getByRole('button', { name: 'Goose' }).click();
+  await page.locator('.targeting-overlay').getByRole('button', { name: 'Goose' }).click();
   await page.getByTestId('continue-from-summary').click();
   await expect(page.getByTestId('trading-post')).toBeVisible();
 

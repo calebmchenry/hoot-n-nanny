@@ -46,7 +46,6 @@ export const AudioControls = ({
         aria-label={expanded ? UI_COPY.audioCollapseLabel : UI_COPY.audioExpandLabel}
         aria-expanded={expanded}
         onFocus={() => {
-          setExpanded(true);
           onHoverControl('audio-toggle', 'focus');
         }}
         onPointerEnter={(event) => {

@@ -38,8 +38,16 @@ export const TradingPostScreen = ({
   const [pulseCash, setPulseCash] = useState(false);
   const sectionRef = useRef<HTMLElement | null>(null);
   const refs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const mountGuardRef = useRef(true);
   const previousPopRef = useRef(gameState.pop);
   const previousCashRef = useRef(gameState.cash);
+
+  const guardedSetFocusedIndex = (index: number) => {
+    if (mountGuardRef.current) {
+      return;
+    }
+    setFocusedIndex(index);
+  };
 
   const focusIds = useMemo(() => {
     const offerIds = offers.map((offer) => `offer:${offer.offerId}`);
@@ -80,7 +88,13 @@ export const TradingPostScreen = ({
       return;
     }
 
-    sectionRef.current?.focus();
+    mountGuardRef.current = true;
+    const timer = window.setTimeout(() => {
+      mountGuardRef.current = false;
+      setFocusedIndex(null);
+      sectionRef.current?.focus({ preventScroll: true });
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [shopState]);
 
   useEffect(() => {
@@ -266,7 +280,7 @@ export const TradingPostScreen = ({
               focused={focusedId === `offer:${offer.offerId}`}
               purchased={recentPurchaseOfferId === offer.offerId}
               entryIndex={index}
-              onFocusCard={() => setFocusedIndex(index)}
+              onFocusCard={() => guardedSetFocusedIndex(index)}
               onHoverControl={onHoverControl}
               onPurchase={() => {
                 setRecentPurchaseOfferId(offer.offerId);
@@ -287,7 +301,7 @@ export const TradingPostScreen = ({
           cash={gameState.cash}
           maxed={maxed}
           focused={focusedId === 'capacity'}
-          onFocusCard={() => setFocusedIndex(offers.length)}
+          onFocusCard={() => guardedSetFocusedIndex(offers.length)}
           onHoverControl={onHoverControl}
           onPurchase={onBuyCapacity}
           buttonRef={(element: HTMLButtonElement | null) => {
@@ -298,9 +312,9 @@ export const TradingPostScreen = ({
         <button
           type="button"
           className={`hootenanny-button${focusedId === 'hootenanny' ? ' focused' : ''}`}
-          onFocus={() => setFocusedIndex(offers.length + 1)}
+          onFocus={() => guardedSetFocusedIndex(offers.length + 1)}
           onPointerEnter={(event) => {
-            setFocusedIndex(offers.length + 1);
+            guardedSetFocusedIndex(offers.length + 1);
             onHoverControl('shop-hootenanny', event.pointerType === 'mouse' ? 'mouse' : 'focus');
           }}
           onClick={() => {

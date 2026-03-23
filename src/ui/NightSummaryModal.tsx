@@ -31,9 +31,15 @@ const applyEventToTotals = (
 
 export const NightSummaryModal = ({ summary, onContinue, onHoverControl, onSelectControl }: NightSummaryModalProps) => {
   const prefersReducedMotion = usePrefersReducedMotion();
-  const [revealedCount, setRevealedCount] = useState(0);
-  const [targetPop, setTargetPop] = useState(summary.popBefore);
-  const [targetCash, setTargetCash] = useState(summary.cashBefore);
+  const [revealedCount, setRevealedCount] = useState(() =>
+    prefersReducedMotion ? summary.events.length : 0
+  );
+  const [targetPop, setTargetPop] = useState(() =>
+    prefersReducedMotion ? summary.popAfter : summary.popBefore
+  );
+  const [targetCash, setTargetCash] = useState(() =>
+    prefersReducedMotion ? summary.cashAfter : summary.cashBefore
+  );
   const [fastForwardToken, setFastForwardToken] = useState(0);
 
   useEffect(() => {

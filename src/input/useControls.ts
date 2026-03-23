@@ -46,8 +46,11 @@ export const useControls = ({
       }
 
       if (event.key === 'Enter') {
-        event.preventDefault();
-        onActivateSlot(selectedSlotIndex);
+        const active = document.activeElement as HTMLElement | null;
+        if (!active || active.hasAttribute('data-slot-index')) {
+          event.preventDefault();
+          onActivateSlot(selectedSlotIndex);
+        }
       }
 
       if (event.key === 'Escape') {

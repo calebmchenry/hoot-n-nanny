@@ -1,9 +1,6 @@
 import { expect, test } from '@playwright/test';
 
 test.beforeEach(async ({ page }) => {
-  await page.addInitScript(() => {
-    window.localStorage.clear();
-  });
   await page.emulateMedia({ reducedMotion: 'reduce' });
 });
 
