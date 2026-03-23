@@ -1,89 +1,49 @@
-# Sprint: Trading Post & Victory
+# Sprint 003 Draft — Personality & Polish
 
 ## Overview
-
-This sprint implements the Trading Post phase, Shop UI, and the Win Condition, completing the core gameplay loop of *Hoot N' Nanny*. The player will now transition from a completed night (Hootenanny phase) into the shop to spend their earned Pop and Cash, and then proceed to the next night. The ultimate goal is added: acquiring and successfully bringing 3 blue-ribbon animals into the barn to trigger the win state.
+This sprint tackles Backlog Items #24 (Humor & Personality Pass) and #25 (Animation Polish). The core gameplay loop is complete; now the goal is to elevate Hoot N' Nanny from a functional prototype into a charming, lively experience. By the end of this sprint, the game will feature witty flavor text, satisfying animations for phase transitions, snappy UI juice, and an overarching warm, goofy tone that matches the design intent.
 
 ## Architecture
+Since this is a polish and content sprint on an existing React/TypeScript codebase, architectural changes are minimal. The work is divided into data enrichment and presentation layer updates:
+1. **Data Layer**: Expanding the core game catalog (`Animal`, `Power`) to include descriptive text strings.
+2. **Component Layer**: Updating UI components to surface the new text and integrating animation hooks or class toggles.
+3. **Styling Layer**: Adding robust CSS keyframes and transitions. To adhere to the strict "lightweight frontend" constraints outlined in `INTENT.md`, we will avoid heavy animation libraries (like Framer Motion) and rely purely on Vanilla CSS transitions and keyframe animations.
 
-### State Seam
-The Trading Post hooks into the night-to-night seam established in Sprint 001. It takes the `GameState` (with updated Pop and Cash from the night's scoring) and presents purchasing options before initializing the next `NightState`.
+## Implementation Phases
 
-### Shop Pool & Generation
-The shop requires a generator function to select 10 regular animals and 2 blue-ribbon animals from the catalog. Blue-ribbon animals have unlimited stock. Regular animals will have a defined limited stock per shop visit.
+### Phase 1: The Voice (Data & UI Text)
+- **Data Model Update**: Modify `src/game/types.ts` to add `flavorText` and `wittyDescription` fields to the `Animal` and `Power` types.
+- **Content Injection**: Update `src/game/catalog.ts` to include goofy, warm, and scrappy flavor text for every animal and power (e.g., "Goat: Eats tin cans, screams at clouds.", "Noisy: Three strikes and the farmer wakes up.").
+- **UI Integration**: Update `src/ui/ShopInspector.tsx` and `src/ui/InspectorPanel.tsx` to render these new text fields with appropriate typography and spacing, ensuring they don't clutter the essential gameplay information.
 
-### Transactions
-Pure functions handle purchases to mutate state predictably:
-- `buyAnimal(state, animalId) -> state`: Deducts Pop, decrements stock, and adds a new `OwnedAnimal` to the player's collection.
-- `buyCapacity(state) -> state`: Deducts Cash, increments `barnCapacity`, and increases the cost of the next capacity upgrade.
+### Phase 2: Core Gameplay Juice (Animations)
+- **Animal Entry**: Update `src/ui/AnimalSprite.tsx` and associated CSS to animate animals entering the barn. They should use a satisfying "pop" (scale overshoot) or "drop-in" keyframe animation rather than just appearing.
+- **Scoring Tally**: Enhance `src/ui/NightSummaryModal.tsx` and `src/ui/StatusBar.tsx` to animate the Pop and Cash numbers ticking up during scoring, rather than jumping instantly to the final value.
+- **Capacity Warnings**: Implement the design requirement where unused activate abilities "flash tastefully" when the barn is at capacity to remind the player they have options before calling it a night.
 
-### Win Condition Evaluation
-The win condition is evaluated during the Hootenanny phase's "call it a night" scoring pipeline. If 3 blue-ribbon animals are present in the barn upon ending the night, the game transitions to a `WinState` rather than the `NightSummaryModal`.
-
-## Implementation phases
-
-### Phase 1 — Shop Engine & State Transitions
-Implement the shop generation logic (drawing 10 regular, 2 blue-ribbon animals). Implement the transaction functions for buying animals and capacity, ensuring cost scaling for capacity is handled. Wire the transition from the end-of-night summary into the shop phase, and from the shop phase into the next night.
-
-**Exit criteria**: The game loop runs infinitely: Night -> Shop -> Night, with accurate state updates for purchases in memory. Test suites verify transaction logic.
-
-### Phase 2 — Shop UI & Interactions
-Build the visual layout for the Trading Post. Display available animals with their images, stock, cost, ability icons, and currencies. Implement the hover/focus state to display the "walking in place" animation and the ability explanation text. Add the idle "Shop for upgrades" text and the "Hootenanny" button to proceed. Add the capacity upgrade button showing current cost.
-
-**Exit criteria**: The player can browse the shop, see details on hover/focus, and purchase items using UI controls with accurate cost deductions and stock updates.
-
-### Phase 3 — The Win Condition
-Implement the win condition check in the Hootenanny's scoring pipeline. Update the game state to handle a win state. Create a simple `WinScreen` to display when the condition is met.
-
-**Exit criteria**: The game ends and displays the win screen when a player successfully calls it a night with 3 blue-ribbon animals in the barn.
-
-### Phase 4 — Polish and Input Unification
-Ensure keyboard navigation, mouse, and touch all work seamlessly in the Shop UI. Ensure focus management is solid so players can quickly tab/arrow through shop items. Add simple placeholders for the shop visual requirements (e.g. basic CSS animations for walking in place).
-
-**Exit criteria**: The shop is fully playable and navigable across all target control schemes.
+### Phase 3: Flow & Feedback (Transitions)
+- **Phase Transitions**: Smooth out the harsh cuts between game phases (Hootenanny → Night Summary → Shop → Hootenanny) with simple CSS fade-ins and fade-outs.
+- **Interaction Feedback**: Audit all clickable elements (shop cards, barn slots, buttons). Ensure every interactive element has a clear hover state (e.g., slight scale up, brightness increase) and an active/click state (e.g., scale down "depress" effect).
 
 ## Files Summary
-
-| File | Purpose |
-| --- | --- |
-| `src/game/shop.ts` | Shop generator logic, stock tracking, and transaction pure functions |
-| `src/ui/ShopScreen.tsx` | Main Trading Post UI component |
-| `src/ui/ShopItem.tsx` | Individual animal listing in the shop with hover/focus states |
-| `src/ui/CapacityUpgrade.tsx` | Button and logic for barn capacity upgrades |
-| `src/ui/WinScreen.tsx` | The victory screen component |
-| `src/game/__tests__/shop.test.ts` | Unit tests for shop generation, transactions, and capacity scaling |
-| `src/game/__tests__/win.test.ts` | Unit tests for the 3 blue-ribbon win condition |
+- **Data**: `src/game/types.ts`, `src/game/catalog.ts`
+- **Components**: `src/ui/ShopInspector.tsx`, `src/ui/InspectorPanel.tsx`, `src/ui/AnimalSprite.tsx`, `src/ui/NightSummaryModal.tsx`, `src/ui/StatusBar.tsx`
+- **Styles**: `src/styles/app.css`, `src/styles/shop.css`, `src/styles/win.css` (plus any component-specific CSS)
 
 ## Definition of Done
-
-- The game successfully transitions from the night phase summary into the shop.
-- The shop generates exactly 10 regular animals and 2 blue-ribbon animals per visit.
-- Blue-ribbon animals have unlimited stock; regular animals have limited stock.
-- The UI displays image, stock, cost, ability icon, and currencies for each animal.
-- Hovering or focusing an animal displays its ability text and a "walking in place" animation.
-- The idle state shows "Shop for upgrades".
-- The player can purchase animals with Pop and capacity with Cash.
-- Capacity upgrade cost increases with each purchase.
-- The "Hootenanny" button transitions the player to the next night with their newly purchased animals in the farm.
-- If the player calls it a night with 3 blue-ribbon animals in the barn, the game displays a win screen.
-- All shop interactions work via keyboard, mouse, and touch.
-- Unit tests cover shop generation, transactions, and win condition logic.
+- All animals and powers in the catalog have unique, tone-appropriate flavor text.
+- Flavor text is visible in the Shop and Barn inspector panels without breaking layouts.
+- Animals entering the barn play a distinct entry animation.
+- Score tallies count up dynamically during the scoring phase.
+- Transitions between game phases are animated (no jarring cuts).
+- All interactive UI elements have visible hover and active states.
+- The game's bundle size remains small (no heavy external animation libraries added).
 
 ## Risks
-
-### 1. Capacity Cost Scaling
-The design doesn't explicitly state the math for the capacity cost increase.
-**Mitigation**: Implement a simple, documented step function (e.g., +1 Cash per upgrade) that can be easily tuned later.
-
-### 2. Shop Pool Generation
-Ensuring a good variety of animals without repeating the same exact shop every time or creating unbalanced combinations.
-**Mitigation**: Implement a robust random selection from the available catalog, potentially guaranteeing at least one cheap and one expensive regular animal.
-
-### 3. Focus Management in Grid UI
-The shop UI has many interactive elements; keyboard navigation might become clunky or trap the user's focus.
-**Mitigation**: Explicitly manage a grid-based focus state for the shop items, utilizing the same unified input controller pattern from the Barn Grid.
+- **Scope Creep on Polish**: "Juice" can be an endless rabbit hole. We must timebox animation tweaking to prevent the sprint from dragging on.
+- **Layout Breakage**: Adding new text to the UI could overflow or break responsive layouts on mobile. We must test text lengths and ensure text wrapping/truncation is handled gracefully.
+- **Animation Performance**: CSS animations on many elements (like a full barn) could cause jank on lower-end devices. We will stick to hardware-accelerated CSS properties (`transform`, `opacity`).
 
 ## Dependencies
-
-- Sprint 001 must be complete (the night phase, scoring, and data models are prerequisites).
-- The base `AnimalDefinition` catalog must contain the blue-ribbon animals and their baseline costs/powers.
+- Assumes Sprint 002 (Core loop, shop, win condition) is fully complete and stable.
+- Relies purely on existing sprites/fonts; no new external assets required.

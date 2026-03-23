@@ -7,6 +7,7 @@
   display: grid;
   gap: 0.95rem;
   outline: none;
+  animation: slide-in-up var(--motion-transition) var(--motion-ease) both;
 }
 
 .shop-header {
@@ -32,6 +33,12 @@
   font-weight: 700;
 }
 
+.shop-quip {
+  margin: 0;
+  font-weight: 700;
+  color: #4c2e16;
+}
+
 .shop-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -47,12 +54,19 @@
   padding: 0.52rem;
   text-align: left;
   color: inherit;
+  transition:
+    transform var(--motion-hover) var(--motion-ease),
+    box-shadow var(--motion-hover) var(--motion-ease),
+    filter var(--motion-hover) var(--motion-ease),
+    opacity var(--motion-hover) var(--motion-ease);
 }
 
 .shop-card {
   display: grid;
   gap: 0.22rem;
   align-content: start;
+  animation: slide-in-up 240ms var(--motion-ease) both;
+  animation-delay: calc(var(--entry-index) * 50ms);
 }
 
 .shop-card h3,
@@ -78,11 +92,26 @@
   outline-offset: 1px;
 }
 
+.shop-card:hover,
+.shop-card:focus-visible,
+.upgrade-card:hover,
+.upgrade-card:focus-visible,
+.hootenanny-button:hover,
+.hootenanny-button:focus-visible {
+  transform: translateY(-2px);
+  box-shadow: 4px 4px 0 #4f311b;
+}
+
 .shop-card.blue-ribbon {
   border-color: #2f7e58;
   background:
     linear-gradient(135deg, rgba(47, 126, 88, 0.14) 0%, rgba(47, 126, 88, 0) 36%),
     linear-gradient(180deg, #fffdf7 0%, #e7f3ec 100%);
+}
+
+.shop-card.blue-ribbon {
+  animation-name: pop-in;
+  animation-duration: 280ms;
 }
 
 .shop-card.blue-ribbon::after {
@@ -100,6 +129,14 @@
 .upgrade-card.dimmed {
   opacity: 0.46;
   box-shadow: none;
+}
+
+.shop-card.sold-out {
+  filter: grayscale(0.82);
+}
+
+.shop-card.purchased {
+  animation: wiggle 210ms var(--motion-step-retro);
 }
 
 .shop-sprite {
@@ -158,6 +195,15 @@
   padding: 0.7rem;
 }
 
+.shop-inspector-content {
+  animation: slide-in-up 180ms var(--motion-ease) both;
+}
+
+.shop-inspector-flavor {
+  font-weight: 700;
+  color: #5a3418;
+}
+
 .shop-inspector h3 {
   margin: 0 0 0.35rem 0;
   text-transform: uppercase;
@@ -181,6 +227,12 @@
   border: 1px solid #5d4228;
   background: #f9ecd0;
   font-weight: 700;
+}
+
+.shop-footer-note {
+  margin: 0;
+  font-size: 0.74rem;
+  color: #5a3418;
 }
 
 @media (max-width: 980px) {

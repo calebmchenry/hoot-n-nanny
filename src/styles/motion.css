@@ -1,0 +1,192 @@
+:root {
+  --motion-press: 120ms;
+  --motion-hover: 200ms;
+  --motion-transition: 320ms;
+  --motion-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --motion-step-retro: steps(4, end);
+}
+
+@keyframes bounce-in {
+  0% {
+    transform: translateY(10px) scale(0.86);
+    opacity: 0;
+  }
+
+  55% {
+    transform: translateY(-2px) scale(1.06);
+    opacity: 1;
+  }
+
+  100% {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes pop-in {
+  0% {
+    transform: scale(0.82);
+    opacity: 0;
+  }
+
+  70% {
+    transform: scale(1.05);
+    opacity: 1;
+  }
+
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes slide-in-up {
+  0% {
+    transform: translateY(14px);
+    opacity: 0;
+  }
+
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes slide-out-down {
+  0% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+
+  100% {
+    transform: translateY(14px);
+    opacity: 0;
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes fade-out {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes count-pulse {
+  0% {
+    transform: scale(1);
+  }
+
+  50% {
+    transform: scale(1.08);
+  }
+
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes wiggle {
+  0% {
+    transform: rotate(0deg);
+  }
+
+  25% {
+    transform: rotate(-2deg);
+  }
+
+  50% {
+    transform: rotate(2deg);
+  }
+
+  75% {
+    transform: rotate(-1deg);
+  }
+
+  100% {
+    transform: rotate(0deg);
+  }
+}
+
+@keyframes hover-bob {
+  0% {
+    transform: translateY(0px);
+  }
+
+  50% {
+    transform: translateY(-1px);
+  }
+
+  100% {
+    transform: translateY(0px);
+  }
+}
+
+@keyframes flash-attention {
+  0% {
+    opacity: 0.8;
+  }
+
+  50% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0.8;
+  }
+}
+
+@keyframes screen-shake {
+  0% {
+    transform: translate(0, 0);
+  }
+
+  25% {
+    transform: translate(-4px, 1px);
+  }
+
+  50% {
+    transform: translate(4px, -1px);
+  }
+
+  75% {
+    transform: translate(-3px, 1px);
+  }
+
+  100% {
+    transform: translate(0, 0);
+  }
+}
+
+.count-pulse {
+  animation: count-pulse 220ms var(--motion-step-retro);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+    transition-delay: 0ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .phase-curtain {
+    display: none !important;
+  }
+}

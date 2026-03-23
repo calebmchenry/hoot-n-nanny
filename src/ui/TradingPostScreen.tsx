@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
+import { UI_COPY, getShopQuip } from '../content/copy';
 import { isMaxCapacity } from '../game/selectors';
 import { upgradePrice } from '../game/shop';
 import type { GameState, ShopOffer } from '../game/types';
@@ -28,8 +29,13 @@ export const TradingPostScreen = ({
   );
 
   const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
+  const [recentPurchaseOfferId, setRecentPurchaseOfferId] = useState<string | null>(null);
+  const [pulsePop, setPulsePop] = useState(false);
+  const [pulseCash, setPulseCash] = useState(false);
   const sectionRef = useRef<HTMLElement | null>(null);
   const refs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const previousPopRef = useRef(gameState.pop);
+  const previousCashRef = useRef(gameState.cash);
 
   const focusIds = useMemo(() => {
     const offerIds = offers.map((offer) => `offer:${offer.offerId}`);
@@ -64,6 +70,37 @@ export const TradingPostScreen = ({
     sectionRef.current?.focus();
   }, [shopState]);
 
+  useEffect(() => {
+    if (!recentPurchaseOfferId) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => setRecentPurchaseOfferId(null), 260);
+    return () => window.clearTimeout(timer);
+  }, [recentPurchaseOfferId]);
+
+  useEffect(() => {
+    if (previousPopRef.current === gameState.pop) {
+      return;
+    }
+
+    previousPopRef.current = gameState.pop;
+    setPulsePop(true);
+    const timer = window.setTimeout(() => setPulsePop(false), 260);
+    return () => window.clearTimeout(timer);
+  }, [gameState.pop]);
+
+  useEffect(() => {
+    if (previousCashRef.current === gameState.cash) {
+      return;
+    }
+
+    previousCashRef.current = gameState.cash;
+    setPulseCash(true);
+    const timer = window.setTimeout(() => setPulseCash(false), 260);
+    return () => window.clearTimeout(timer);
+  }, [gameState.cash]);
+
   if (!shopState) {
     return null;
   }
@@ -88,6 +125,7 @@ export const TradingPostScreen = ({
     }
 
     if (focusedOffer) {
+      setRecentPurchaseOfferId(focusedOffer.offerId);
       onBuyOffer(focusedOffer.offerId);
       return;
     }
@@ -179,6 +217,7 @@ export const TradingPostScreen = ({
       className="trading-post"
       tabIndex={0}
       ref={sectionRef}
+      data-testid="trading-post"
       onKeyDown={(event) => {
         onKeyDown(event as unknown as KeyboardEvent);
       }}
@@ -190,12 +229,19 @@ export const TradingPostScreen = ({
     >
       <header className="shop-header">
         <h1>Trading Post</h1>
+        <p className={`shop-counter${pulsePop ? ' count-pulse' : ''}`}>Pop {gameState.pop}</p>
+        <p className={`shop-counter${pulseCash ? ' count-pulse' : ''}`}>Cash {gameState.cash}</p>
         <p>Night {gameState.nightNumber}</p>
-        <p>Pop {gameState.pop}</p>
-        <p>Cash {gameState.cash}</p>
       </header>
 
-      <div className="shop-grid">
+      <p className="shop-quip">{getShopQuip(gameState.nightNumber)}</p>
+
+      <div
+        className="shop-grid"
+        onMouseLeave={() => {
+          setFocusedIndex(null);
+        }}
+      >
         {offers.map((offer, index) => {
           const affordable = gameState.pop >= offer.costPop;
           return (
@@ -204,8 +250,13 @@ export const TradingPostScreen = ({
               offer={offer}
               affordable={affordable}
               focused={focusedId === `offer:${offer.offerId}`}
+              purchased={recentPurchaseOfferId === offer.offerId}
+              entryIndex={index}
               onFocusCard={() => setFocusedIndex(index)}
-              onPurchase={() => onBuyOffer(offer.offerId)}
+              onPurchase={() => {
+                setRecentPurchaseOfferId(offer.offerId);
+                onBuyOffer(offer.offerId);
+              }}
               buttonRef={(element: HTMLButtonElement | null) => {
                 refs.current[`offer:${offer.offerId}`] = element;
               }}
@@ -244,6 +295,7 @@ export const TradingPostScreen = ({
       </div>
 
       <ShopInspector focusedOffer={focusedOffer} focusedTarget={focusedTarget} />
+      <p className="shop-footer-note">{UI_COPY.shopHootenannyBlurb}</p>
     </section>
   );
 };

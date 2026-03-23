@@ -147,6 +147,38 @@ describe('night engine', () => {
     expect(scored.pop).toBe(4);
   });
 
+  it('summary events follow scoring pipeline order with before/after totals', () => {
+    const base = createInitialGameState('summary-events');
+    const { state, ids } = withOwnedAnimals(base, ['goat', 'pig', 'cow', 'sheep', 'sheep']);
+    const ready = {
+      ...state,
+      night: {
+        ...state.night,
+        barnResidentIds: ids,
+        drawPileIds: []
+      }
+    };
+
+    const scored = applyIntent(ready, { type: 'CALL_IT_A_NIGHT' });
+    const summary = scored.lastNightSummary;
+
+    expect(summary).not.toBeNull();
+    if (!summary) {
+      return;
+    }
+
+    expect(summary.popBefore).toBe(0);
+    expect(summary.cashBefore).toBe(0);
+    expect(summary.popAfter).toBe(scored.pop);
+    expect(summary.cashAfter).toBe(scored.cash);
+
+    const kinds = summary.events.map((event) => event.kind);
+    expect(kinds.slice(0, 5)).toEqual(['pop-gain', 'pop-gain', 'pop-gain', 'pop-gain', 'pop-gain']);
+    expect(kinds.slice(5, 10)).toEqual(['cash-gain', 'cash-gain', 'cash-gain', 'cash-gain', 'cash-gain']);
+    expect(kinds[10]).toBe('cash-cost');
+    expect(kinds.slice(11)).toEqual(['bonus', 'bonus']);
+  });
+
   it('sneak does not consume barn slot and stacks collapse duplicates', () => {
     const base = createInitialGameState('sneak-stack');
     const { state, ids } = withOwnedAnimals(base, ['mouse', 'bunny', 'bunny']);

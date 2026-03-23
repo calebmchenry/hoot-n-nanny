@@ -1,126 +1,136 @@
-# Sprint Draft Critique — Trading Post & Victory
+# Sprint 003 Draft Critique
 
-## Claude Draft
+## Claude Draft — "Personality & Polish"
 
 ### Strengths
 
-1. **Exceptional specificity.** The draft names exact interfaces (`ShopState`, `ShopSlot`), exact function signatures, exact file paths, and exact test cases. An executor could start coding Phase 1 without asking a single clarifying question.
-2. **Architecture section is production-ready.** The phase router design (`GamePhase` union type, conditional render in `App.tsx`, no router library) is the right call for this scale. The explanation of where the shop plugs into the existing seam (`NightSummaryModal`) is clear and correct.
-3. **Stock generation math is spelled out.** 13 eligible regulars (Goat excluded), Fisher-Yates shuffle, 3 copies per regular slot, unlimited blue-ribbon — all derived correctly from GAME_DESIGN.md. No ambiguity.
-4. **Capacity upgrade formula is explicit.** The 2, 3, 4, 5... sequence is documented, isolated in one function, and flagged as a tuning knob. Good separation of concerns.
-5. **Win condition placement is deliberate.** Checking after End-of-Night effects, only on call-it-a-night (not bust), is a design-aware decision that matches the game design doc's intent.
-6. **Phase ordering is dependency-driven.** Domain model first (Phase 1), win logic second (Phase 2), wiring third (Phase 3), UI fourth (Phase 4–5). Each phase has testable exit criteria before the next begins.
-7. **Files summary is complete.** Every new and modified file is listed with purpose. No surprises during execution.
-8. **Risk analysis is honest.** Identifies phase transition bugs as the #1 risk (correct), and the mitigation (shop never touches NightState, fresh NightState built from GameState) is the right architectural guardrail.
+1. **Exceptional specificity.** Every animation is described with exact keyframe names, durations, easing functions, and CSS implementation details. This leaves almost zero ambiguity for execution — an implementer could build directly from this doc without guessing intent.
+
+2. **CSS-first architecture is the right call.** The principle of CSS-driven animation with JS only orchestrating *when* classes apply is perfectly matched to the project's "lightweight frontend" constraint from INTENT.md. The `--slot-index` custom property pattern for staggered delays is elegant and avoids JS timer sprawl.
+
+3. **`transitionPhase` state design is well-thought-out.** Adding an intermediate state to `GameState` for phase transitions gives CSS clean hooks via `data-transition` attributes. The explicit enumeration of transition values (`exiting-night`, `entering-summary`, etc.) makes the state machine legible.
+
+4. **Copy-as-data separation.** Moving all UI strings into `src/ui/copy.ts` is a strong architectural choice — it keeps personality editable without touching rendering logic and makes a future i18n pass trivial.
+
+5. **Comprehensive file manifest.** The "Files Summary" section with new/modified/untouched tables is production-grade project management. Listing untouched files with reasons shows the author considered blast radius.
+
+6. **Risk table is concrete and actionable.** Each risk has a specific mitigation, not hand-waving. The "disable input during transitions" mitigation for timing races is exactly right.
+
+7. **Definition of Done is thorough** — 23 discrete checkboxes covering personality, animation, and quality. The `prefers-reduced-motion` and bundle size requirements show mature engineering thinking.
 
 ### Weaknesses
 
-1. **No mention of the bust → pin → shop flow.** GAME_DESIGN.md says on bust the player pins one animal and it's removed from the farm next night. The draft says "After bust, same transition (bust still leads to shop per game design)" but doesn't address whether the pinning mechanic is already implemented in Sprint 001 or needs work here. If pinning hasn't shipped, the shop transition on bust is incomplete.
-2. **Barn capacity initial value not stated.** The draft discusses upgrades but never confirms the starting capacity (5, per GAME_DESIGN.md) or whether Sprint 001 already tracks `barnCapacity` on `GameState`. If it doesn't, that's a Phase 1 task, not an assumption.
-3. **No touch input mentioned.** GAME_DESIGN.md specifies mouse, keyboard, and touch. The draft covers keyboard and mouse thoroughly but never addresses touch — tap targets, mobile viewport considerations, or touch-specific interactions.
-4. **Shop card currency display is underspecified.** The draft says "Currency reward chips (Pop/Cash amounts the animal generates)" but doesn't define what this looks like for animals with 0 currency (Chimera: 0 Pop, 0 Cash) or animals with mixed currencies. Edge case for the UI.
-5. **"Play Again" reset scope is vague.** The win screen says "resets GameState to starter deck" but doesn't specify whether this means the exact initial state (0 Pop, 0 Cash, 5 capacity, starter animals) or just resets the deck. Should be explicit.
-6. **Playwright tests may be brittle.** Path 2 requires reaching the win condition, which means either mocking a lot of game state or playing through many nights. The draft mentions "seeded/mocked" but doesn't specify the approach. This could become a time sink.
+1. **setTimeout-based transition orchestration is fragile.** The reducer sets `transitionPhase`, then uses `setTimeout(350ms)` to advance state. This creates implicit timing coupling between JS and CSS. If CSS animation duration changes, the JS timeout must change in lockstep. A more robust approach: listen for `transitionend`/`animationend` events to advance state, with a timeout as a *fallback* rather than the primary mechanism.
+
+2. **Phase 5 (Humor) is underspecified relative to Phases 1-4.** The animation phases describe exact keyframe names, durations, and CSS patterns. Phase 5 gives example copy but no process for writing/reviewing 19 animal descriptions + 12 power quips + all UI strings. That's a significant creative writing task that could easily bottleneck or produce inconsistent tone without a review pass.
+
+3. **The `copy.ts` example mixes concerns.** It contains both static strings (`shopTitle: 'The Trading Post'`) and randomized arrays (`bustQuips: [...]`). The randomization logic (which quip to pick) isn't specified — does the component call `Math.random()`? Use the game's seeded RNG? This matters for test determinism and replay consistency.
+
+4. **No mention of accessibility beyond `prefers-reduced-motion`.** Animated tally counters, staggered reveals, and typewriter effects can be problematic for screen readers. The DoD should include ensuring ARIA live regions announce final values, not intermediate animation states.
+
+5. **Win screen confetti is over-scoped for CSS-only.** "Multiple animated pseudo-elements with random rotation and fall" using only CSS is achievable but fiddly. Pseudo-elements are limited to `::before`/`::after` (2 per element), so "3-4 ribbons" requires dedicated empty elements or stacking on different containers. This feels like it could eat disproportionate time for a decorative effect.
+
+6. **No estimated time or sprint duration.** The phases have percentage breakdowns but no absolute time estimates. Without a timebox, this sprint could easily expand — especially given the creative writing component.
 
 ### Gaps in Risk Analysis
 
-- **No risk identified for blue-ribbon cost balance.** Blue-ribbon animals cost 40–60 Pop. A typical night might earn 10–20 Pop. The player needs 120–180 Pop across the game to buy 3. If this takes too many nights the game drags; if too few it's trivially easy. The draft's Risk #4 hand-waves this as "out of scope," but it directly affects whether the sprint delivers a satisfying game loop.
-- **No risk for "stuck state" where player can't progress.** If a player spends all Pop on regular animals and never saves for blue-ribbons, they may loop indefinitely with no viable path to victory. There's no comeback mechanic discussed.
-- **No risk for shop state being accidentally persisted.** The draft says shop state is "discarded when the player leaves," but if a bug causes it to survive, purchased animals could duplicate or stock could carry over.
+- **No risk for test flakiness from animation timing.** E2E tests (`shop-and-win.spec.ts`) interact with UI elements that will now animate in with delays. If Playwright clicks before an entrance animation completes, tests will fail intermittently. Mitigation: ensure test selectors wait for animation completion, or disable animations in test environment via a CSS class or `prefers-reduced-motion`.
+
+- **No risk for the `transitionPhase` blocking user input.** The mitigation says "all intents are no-ops during transitions" — but this means rapid clicking during a 700ms transition window silently drops user actions. If a player clicks quickly, they'll perceive the UI as unresponsive. Consider queuing the last intent instead of dropping all.
+
+- **No risk for catalog.ts description length variance.** Some animal descriptions may be 10 words, others 40. Long descriptions could overflow the inspector panel, especially on smaller viewports. Needs a max-length guideline or CSS truncation strategy.
 
 ### Missing Edge Cases
 
-- Player enters shop with exactly enough Pop for a blue-ribbon animal but buys a regular animal first, then can't afford the blue-ribbon — no undo mechanism discussed.
-- What happens if `ownedAnimals` exceeds `barnCapacity` after purchases? The player buys animals but the barn can't hold them all — are purchased animals always in the farm (draw pile) rather than the barn? This is probably correct but should be stated explicitly.
-- Stock generation with fewer than 10 eligible regular types in future (if the catalog changes). Not urgent but the function should handle `min(10, availableRegulars.length)`.
+- **What happens to animations when the game is backgrounded?** `requestAnimationFrame` pauses when the tab is hidden. If a player switches tabs during the scoring tally, they'll return to a partially-animated state. The counter should snap to final values on visibility change.
+- **Rapid phase transitions.** If a player completes a night quickly and clicks through summary fast, multiple `setTimeout` chains could overlap. Need to cancel pending timeouts when a new transition starts.
+- **Initial game start.** The draft covers night→summary→shop→night transitions but doesn't mention the very first barn appearance when the game begins. Should Night 1 have an entrance animation?
 
 ### Definition of Done Completeness
 
-Strong. Covers the full loop, stock generation, purchases, UI display, keyboard navigation, win condition, regression tests, and bundle size. **Missing:** touch input, "Play Again" resets to exact initial state, and no mention of verifying currency persistence across a multi-night run (not just single transitions).
+Strong overall. Missing items:
+- No checkbox for screen reader / ARIA compatibility of animated content
+- No checkbox for "animations disabled in test environment" or "E2E tests remain non-flaky with animations enabled"
+- No checkbox for verifying animation behavior on page visibility change
+- The "non-developer reads copy as funny or charming" criterion (last personality checkbox) is subjective and untestable — consider replacing with "copy reviewed by at least one non-author"
 
 ---
 
-## Gemini Draft
+## Gemini Draft — "Personality & Polish"
 
 ### Strengths
 
-1. **Concise and scannable.** The draft is roughly 1/3 the length of Claude's. For a sprint that's well-understood (the backlog items are specific), brevity is a feature — less to misinterpret.
-2. **Correctly identifies the state seam.** "Takes the GameState with updated Pop and Cash from the night's scoring" — this is the right mental model for where the shop plugs in.
-3. **Transaction functions are cleanly named.** `buyAnimal(state, animalId)` and `buyCapacity(state)` — simpler signatures than Claude's slot-index approach. Using `animalId` instead of slot index is arguably more robust (doesn't depend on shop layout).
-4. **Phase 4 (Polish and Input Unification) as a separate phase** is a good structural call. It acknowledges that keyboard/mouse/touch parity is real work, not an afterthought.
-5. **Risks section correctly flags focus management** as a distinct concern. Grid-based keyboard navigation in a shop with 12+ interactive elements is genuinely tricky.
-6. **Separate `CapacityUpgrade.tsx` component** is a good decomposition choice — keeps the upgrade UI cleanly isolated from the animal card grid.
+1. **Clear, concise structure.** The draft is readable and well-organized. Someone unfamiliar with the project could understand the scope in under 2 minutes.
+
+2. **Correct architectural instinct.** Identifying the three layers (data, component, styling) and calling out the "no heavy animation libraries" constraint shows alignment with project values.
+
+3. **Risks are realistic.** "Scope creep on polish" is the #1 actual risk for this kind of sprint. "Layout breakage from new text" is practical and often overlooked. "Hardware-accelerated CSS properties" as the perf mitigation is correct.
+
+4. **Appropriate conservatism on scope.** The draft doesn't overreach — three phases, clear deliverables, no speculative features.
 
 ### Weaknesses
 
-1. **Severely underspecified.** The draft reads more like an outline than an executable sprint. Key details are missing:
-   - No interface definitions for shop state.
-   - No stock quantities for regular animals (how many copies per slot?).
-   - No capacity upgrade pricing formula (just "increases per upgrade").
-   - No win screen contents defined.
-   - No phase transition mechanism described (how does `App.tsx` know which scene to render?).
-   - No mention of what happens on bust (does the player still go to the shop?).
-2. **Win condition timing is ambiguous.** "Evaluated during the Hootenanny phase's 'call it a night' scoring pipeline" — but at what point in the pipeline? Before or after End-of-Night effects? Before or after Upkeep? This matters: if a player can't pay Upkeep and loses 5 Pop, does the win still trigger? Claude's draft correctly places it after all scoring.
-3. **Win condition fires instead of NightSummaryModal.** The draft says "the game transitions to a WinState rather than the NightSummaryModal." This means the player never sees their final scoring breakdown on the winning night. Claude's approach (check during scoring, set phase to win) is more flexible and could still show a summary before the win screen.
-4. **No Playwright or integration tests mentioned.** Only unit tests for shop and win condition. No end-to-end verification that the full loop works.
-5. **Files summary is incomplete.** No mention of changes to existing files (`types.ts`, `engine.ts`, `state.ts`, `selectors.ts`, `App.tsx`, `NightSummaryModal.tsx`). Only new files are listed. An executor would have to guess where to wire things in.
-6. **No explicit Goat exclusion.** The draft says "select 10 regular animals from the catalog" but doesn't flag that Goat is marked `not in shop` in GAME_DESIGN.md. Easy to miss.
-7. **No RNG strategy.** Doesn't mention how randomization works — Fisher-Yates, seeded PRNG, or just `Math.random()`. Testing stock generation without deterministic RNG is painful.
-8. **Only 4 implementation phases vs. Claude's 6.** The compression means Phase 1 bundles engine logic AND state transitions together — two concerns that are better tested separately.
+1. **Severely underspecified.** This reads as a high-level outline, not an implementation plan. Compare: Claude's draft specifies `animation: bounce-in 300ms steps(4, end)` with `--slot-index` custom properties. Gemini's draft says "a satisfying 'pop' or 'drop-in' keyframe animation." An implementer would need to make dozens of design decisions that should be made upfront.
+
+2. **Incorrect file references.** The draft proposes animating animals via `AnimalSprite.tsx`, but `AnimalSprite.tsx` renders SVG sprite graphics. Animation should happen at the *slot* level (`BarnGrid.tsx`), not the sprite level — you animate the container, not the SVG. The Claude draft gets this right.
+
+3. **Missing `transitionPhase` or equivalent mechanism.** Phase transitions are mentioned ("smooth out harsh cuts with CSS fade-ins and fade-outs") but there's no architectural plan for *how*. Where does the intermediate state live? How does the app know it's in a transition? Without this, implementation will be ad-hoc — likely scattered `setTimeout` calls in components instead of a centralized state machine.
+
+4. **Type modifications are unnecessary.** Adding `flavorText` and `wittyDescription` fields to the `Animal` and `Power` types adds fields to the game state that flow through the engine. Flavor text is presentation, not game logic. The Claude draft's approach (enriching `description` in `catalog.ts` and creating a separate `copy.ts`) keeps the type system clean.
+
+5. **No centralized copy strategy.** UI strings (phase titles, button labels, quips) aren't addressed. The draft only covers animal/power descriptions, missing the broader personality pass across all UI surfaces — night start quips, bust messages, shop banter, targeting overlay headers, win screen text.
+
+6. **Definition of Done is too coarse.** 7 items vs. Claude's 23. Missing:
+   - `prefers-reduced-motion` support
+   - Bundle size constraint
+   - Specific animation types (idle bob, bust shake, sold-out transition, etc.)
+   - Win screen animations
+   - Existing tests still passing
+   - No layout shift from animations
+
+7. **No file manifest of untouched files.** Without explicitly listing what *won't* change, there's a risk of scope creep into unrelated files.
 
 ### Gaps in Risk Analysis
 
-- **No risk for phase transition bugs.** This is arguably the highest-risk area of the sprint (shared mutable state across three phases), and the Gemini draft doesn't mention it.
-- **No risk for win condition edge cases.** What about bust with 3 blue-ribbons? What about winning and shopping on the same transition?
-- **No risk for stock generation determinism/testability.** Without injectable RNG, tests for "shop generates varied stock" are non-deterministic.
-- **No risk for bundle size.** Adding a new scene with 12 interactive cards, animations, and a new CSS file could push the bundle past budget.
-- **Capacity cost scaling risk is identified but the mitigation is circular.** "Implement a simple, documented step function that can be easily tuned later" — this is what every draft should do, not a mitigation. The risk is picking the wrong starting values, and the mitigation should be isolation + easy adjustment (which Claude's draft provides).
+- **No risk for animation/game-logic timing conflicts.** This is arguably the biggest technical risk of the sprint (user input during transitions, setTimeout races) and it's completely absent.
+- **No risk for test breakage.** Animations change how elements appear and when they're interactive. Existing E2E tests will be affected.
+- **No risk for tone inconsistency.** Writing 19+ unique personality descriptions is a creative task where quality can vary wildly. No mention of tone guidelines, review process, or examples to anchor the voice.
+- **No risk for `prefers-reduced-motion` compliance.** Accessibility is unmentioned.
 
 ### Missing Edge Cases
 
-- Everything listed under Claude's missing edge cases, plus:
-- No handling for the "0 Pop, 0 Cash" shop visit.
-- No discussion of what the shop looks like when stock is exhausted for a slot.
-- No mention of blue-ribbon visual differentiation in the shop.
-- No specification of the "walking in place" animation (what does it look like with placeholder art?).
+- Everything listed for the Claude draft, plus:
+- **Shop card overflow.** If flavor text is long, shop cards could grow taller than their container. No mention of text truncation or card height strategy.
+- **Inspector panel with no selection.** What does the inspector show when nothing is selected? The Claude draft specifies empty-state copy; Gemini's doesn't.
+- **Bust animation timing.** What if a bust occurs mid-animation (e.g., a rowdy animal triggers a chain that busts)? No mention of interrupting in-progress animations.
 
 ### Definition of Done Completeness
 
-**Incomplete.** Key gaps:
-- No stock quantity per regular slot specified.
-- No capacity pricing formula.
-- No win screen contents.
-- No regression test requirement.
-- No bundle size check.
-- No Playwright/integration test requirement.
-- "Capacity upgrade cost increases with each purchase" — by how much? This is a DoD item that can't be verified without a formula.
-- No "Play Again" or game reset mentioned.
+Insufficient for execution. The 7 items are all necessary but far from sufficient. A sprint executed against this DoD could pass all checks while missing: idle animations, bust effects, phase transition choreography, win screen polish, button press feedback, accessibility, test stability, and bundle size control.
 
 ---
 
 ## Recommendations for the Final Merged Sprint
 
-### Use Claude's draft as the base
+1. **Use Claude's draft as the structural foundation.** Its phase breakdown, file manifest, transition architecture, and DoD are implementation-ready. Gemini's draft doesn't add architectural ideas that Claude's misses.
 
-Claude's draft is substantially more complete and executable. It should serve as the skeleton for the final sprint. Gemini's draft doesn't add significant architectural ideas that Claude's lacks, but it does contribute a few good structural choices worth incorporating.
+2. **Incorporate Gemini's risk awareness around scope creep.** Add an explicit timebox to the sprint (e.g., "if animation tweaking exceeds 2 hours on any single element, ship what works and move on"). Claude's draft is ambitious — 6 phases with detailed specs could balloon without discipline.
 
-### Incorporate from Gemini
+3. **Replace `setTimeout` orchestration with `animationend` events + timeout fallback.** This is the biggest technical gap in both drafts. The transition system should listen for CSS animation completion rather than guessing durations in JS. Keep a timeout as a safety net (e.g., 1000ms max) so a missed event doesn't freeze the game.
 
-1. **Separate `CapacityUpgrade.tsx` component.** Claude bundles the upgrade UI into `TradingPost.tsx`. Gemini's decomposition into a dedicated component is cleaner and easier to test.
-2. **Dedicated "Polish and Input Unification" phase.** Claude spreads input support across Phase 4. Gemini's approach of making it an explicit phase ensures touch input doesn't get lost. The final sprint should have a phase specifically for keyboard + mouse + touch verification.
-3. **`buyAnimal(state, animalId)` signature.** Consider using `animalId` instead of `slotIndex` for the purchase function — it's more semantically meaningful and doesn't couple the logic to the UI's slot layout.
+4. **Specify RNG strategy for randomized copy.** Should quip selection use the game's seeded RNG (deterministic for replays/testing) or `Math.random()` (true randomness for flavor)? Recommend seeded RNG for testability, with the seed advancing on each quip selection.
 
-### Address gaps from both drafts
+5. **Add a test environment animation strategy.** Either: (a) set `prefers-reduced-motion: reduce` in Playwright's browser context, making all animations instant, or (b) add a `data-test` attribute that CSS uses to skip animations. This must be in the DoD.
 
-1. **Confirm bust → pin flow.** Verify whether Sprint 001 implemented the pinning mechanic on bust. If not, either add it to this sprint or explicitly defer it with a note.
-2. **Add touch input to DoD.** Both drafts are weak on this. The final sprint DoD must include: "Shop is fully usable via touch on mobile viewports."
-3. **Specify "Play Again" reset explicitly.** Final state after reset: 0 Pop, 0 Cash, 3 Goats, 2 Pigs, 2 Chickens, 5 barn capacity, Night 1. No ambiguity.
-4. **Add a risk for "stuck state" / economic dead ends.** Even if the mitigation is "out of scope — address in playtesting," it should be named as a known risk.
-5. **Require injectable RNG for stock generation.** Both for testing and for potential future replay/seed features. The function signature should accept an RNG parameter with a default of `Math.random`.
-6. **Add edge case tests:**
-   - Bust with 3 blue-ribbon animals → no win, proceed to shop.
-   - Shop visit with 0 Pop and 0 Cash → player can browse and leave.
-   - Purchasing when `ownedAnimals` would exceed some reasonable upper bound (is there one?).
-   - "Play Again" from win screen fully resets all state including `capacityUpgradeCount`.
-7. **Include existing file changes in the files summary.** Gemini's table only lists new files. The final sprint must list every file touched, as Claude's draft does.
-8. **Keep Playwright smoke tests.** Gemini omitted them entirely. The final sprint should include at least the two paths Claude identified (shop round-trip and win condition).
+6. **Add accessibility checkboxes to DoD:**
+   - Animated counters announce final values via `aria-live` regions
+   - `prefers-reduced-motion` disables decorative motion (keep functional transitions, make them instant)
+   - Focus management isn't broken by animation delays
+
+7. **Cap description lengths.** Add a guideline: animal descriptions ≤ 120 characters, power quips ≤ 80 characters. This prevents inspector panel overflow and keeps the tone punchy.
+
+8. **Scope the win screen confetti pragmatically.** CSS-only confetti with pseudo-elements is fragile and time-consuming. Consider: a simple "3 ribbons bounce in with stagger + victory text types in" as the core win animation, with confetti as a stretch goal. The win screen already works — don't let decoration block the sprint.
+
+9. **Add a "first night" entrance note.** Both drafts cover ongoing transitions but not the initial game start. Night 1 should have a brief barn entrance animation to set the tone immediately.
+
+10. **Keep Gemini's layout breakage risk** and add a concrete mitigation: test all text-bearing components at 320px viewport width, verify no overflow or layout shift.

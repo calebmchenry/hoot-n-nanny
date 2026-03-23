@@ -1,60 +1,59 @@
-# Sprint 002 Critique: Trading Post & Victory
+# NEXT-GEMINI-CRITIQUE
 
-This document provides a comparative critique of the `NEXT-CLAUDE-DRAFT.md` and `NEXT-CODEX-DRAFT.md` sprint plans for closing the core game loop (Shop Phase and Win Condition).
-
-## Claude Draft Evaluation
+## Review: NEXT-CLAUDE-DRAFT (Sprint 003)
 
 ### Strengths
-- **State Modeling:** Extremely clear and concise state modeling (`GamePhase`, `ShopState`, `ShopSlot`). The transition flow is easy to follow.
-- **Testing Strategy:** Explicit inclusion of Playwright smoke tests and specific test cases for pure functions.
-- **UI Layout:** The proposed Trading Post UI layout is practical and breaks down the components well.
+- **CSS-First Specificity:** Provides a highly detailed and concrete plan for CSS animations, including specific keyframes (`bounce-in`, `count-pulse`, `slide-in-up`), easings (`steps()`), and custom properties (`--slot-index` for staggering).
+- **Clear Tone Targets:** Provides excellent concrete examples of the desired copy (e.g., the Goat, the Dragon, power flavor text), setting a very clear bar for the "goofy, warm, scrappy" tone.
+- **Micro-interactions:** Identifies great opportunities for subtle juice, like the idle bob in the barn, button press feedback, and the screen shake on bust.
 
 ### Weaknesses
-- **Stock Quantity:** Stocking 3 copies of regular animals might reduce the "unique find" feel of the shop and could clutter the UI experience compared to a simpler single-stock model.
-- **Pricing Curve:** The capacity upgrade pricing sequence (`2, 3, 4, 5...`) scales very slowly and might not act as a sufficient Cash sink in the late game.
+- **Engine Purity Violation:** Proposes adding `transitionPhase` and `setTimeout` orchestration directly into the `App.tsx` reducer / game engine. This tightly couples presentation timing to the core game logic, violating the principle of keeping the engine pure and synchronous.
+- **Tally Animation Naivety:** Plans to animate the scoring tally but fails to recognize that the current engine outputs a `resolutionLog` of pre-formatted strings. Animating based on parsed strings is fragile and limits the quality of the tally sequence.
 
 ### Gaps in Risk Analysis
-- **Touch Interactions:** The risk analysis does not address how the hover-driven info panel will function on touch devices, a critical UX consideration for a web app.
+- **Unskippable Animations:** Fails to identify the risk of player fatigue from repetitive animations. There is no mention of allowing the user to click/tap to skip the tally or phase transitions.
 
 ### Missing Edge Cases
-- **Maximum Capacity:** Fails to define a maximum barn capacity. Without a cap, players could theoretically purchase infinite capacity, eventually breaking the fixed 40-slot grid layout.
+- How do animations behave if the player clicks rapidly (e.g., buying multiple animals fast)? The draft mentions a wiggle and counter pulse, but rapid clicks might restart or glitch CSS animations if not handled carefully.
 
 ### Definition of Done Completeness
-- Broadly complete for happy paths but lacks constraints on edge cases like the maximum barn size or explicit mobile touch interaction definitions.
+- Strong on visual and tonal requirements.
+- Missing usability requirements (skipping, keyboard navigation during transitions).
+- Does not mandate copy exhaustiveness testing.
 
 ---
 
-## Codex Draft Evaluation
+## Review: NEXT-CODEX-DRAFT (Sprint 003)
 
 ### Strengths
-- **Edge Case Handling:** Explicitly addresses the physical limits of the board by capping barn capacity at 38.
-- **Economy Scaling:** Proposes a steeper and more balanced upgrade cost curve (`3, 5, 7, 9...`).
-- **Touch Support:** Directly identifies the divergence between touch and hover, proposing a focus-driven model to solve it.
-- **Stock Clarity:** Setting regular stock to `1` simplifies the economy and makes shop choices feel more deliberate.
+- **Structural Fixes:** Correctly identifies the flaw in the current `resolutionLog` and proposes a necessary data-model refactor to `ResolutionEvent[]`. This is critical for building a robust, skippable tally animation.
+- **Strict Architectural Boundaries:** Explicitly forbids leaking presentation state into the engine. Mandates that motion stays local and lightweight.
+- **Usability Focus:** Strictly requires that all non-trivial sequences (like the summary tally) be skippable by click, tap, or Enter, directly addressing player fatigue.
+- **Robustness:** Recommends adding exhaustiveness tests for copy to ensure new animals or powers don't ship with missing flavor text.
 
 ### Weaknesses
-- **Overly Prescriptive:** Can be slightly too rigid in dictating exact implementation details (e.g., CSS class toggles vs. other animation strategies), which might constrain the implementer unnecessarily.
+- **Vague Motion Implementation:** The proposed `PhaseTransitionCurtain` and local `useEffect` timers are less concrete than Claude's CSS plan. Implementing exit animations in React without a library is notoriously tricky because components unmount instantly when state changes; Codex waves this away by suggesting a "curtain", which might look cheaper than true choreographed exit/enter animations.
+- **Over-fragmentation:** Proposing three separate copy files (`animalCopy.ts`, `powerCopy.ts`, `uiCopy.ts`) for a game this small might be over-engineering compared to a single centralized file.
 
 ### Gaps in Risk Analysis
-- **Accidental Purchases:** With infinite stock for blue-ribbon animals and no confirmation step, there is a risk of users double-clicking and accidentally buying duplicates they didn't intend to.
+- **React Unmount Races:** Does not deeply address the technical challenge of animating a component *out* when the underlying Redux/useReducer state has already moved to the next phase.
 
 ### Missing Edge Cases
-- **Bust State Edge Cases:** While it correctly notes busted nights never win, it could be clearer on whether the player is forced into the shop or goes straight to a "game over" state (though the game design implies they always go to the shop to recover).
+- If the summary tally is skipped, how does the UI ensure all state (animated counters, log visibility) instantly jumps to the final correct values without intermediate glitches?
 
 ### Definition of Done Completeness
-- Very comprehensive. The inclusion of the capacity cap and explicit touch intent requirements makes the DoD highly robust.
+- Excellent. Covers structural code quality, usability (skip/reduced-motion), and explicitly includes Playwright spec updates for the new UI flows.
 
 ---
 
-## Recommendations for the Final Merged Sprint
+## Recommendations for Final Merged Sprint
 
-The final sprint plan should blend the clear state modeling of the Claude draft with the rigorous edge-case handling and economy rules of the Codex draft.
+The final Sprint 003 plan should synthesize the architectural rigor of Codex with the visual specificity of Claude.
 
-1. **Adopt Codex's Economy Rules:** 
-   - Use a regular animal stock of `1` (creates scarcity and meaningful choices).
-   - Use the steeper barn capacity upgrade curve: `3 + (2 * upgradesPurchased)` (i.e., `3, 5, 7, 9...`).
-2. **Implement the Capacity Cap:** Barn capacity must be hard-capped at 38, as identified in the Codex draft, to respect the physical board constraints.
-3. **Use Focus-Driven Inspection:** Adopt Codex's recommendation to use focus state as the primary driver for the inspector panel, ensuring touch device compatibility. Hover on desktop should simply mirror the focus state.
-4. **State Machine Architecture:** Use Claude's clean `GamePhase` union type (`'night' | 'shop' | 'win'`) but enforce Codex's rule that `ShopState` must be persisted on entry to prevent accidental re-rolls during UI updates.
-5. **Win Condition Clarification:** Explicitly state that the `3+` blue-ribbon animals required for a win do *not* need to be distinct species, and the win check must only occur on a successful (non-bust) night resolution.
-6. **UI Simplicity:** Stick to immediate purchases without confirmation modals (as agreed in both drafts), but ensure the visual feedback for a successful purchase is instant and clear to prevent accidental double-buys of infinite-stock blue-ribbon animals.
+1. **Adopt Codex's Engine Refactor:** You **must** change `NightSummary` to output structured `ResolutionEvent[]` instead of string logs. Do not attempt to animate the tally by parsing strings.
+2. **Keep the Engine Pure (Codex rule, Claude implementation):** Do not put `transitionPhase` in the game engine reducer. Instead, manage transitions in a local UI state machine in `App.tsx`. When the engine says the phase is `shop`, `App.tsx` should hold onto the `summary` UI, trigger the exit animation via CSS `data-transition`, wait for the CSS duration via a local timeout, and *then* render the `shop` UI.
+3. **Mandate Skippable Animations:** All phase transitions and the night summary tally must be skippable by click, tap, or Enter. This is non-negotiable for a snappy game loop.
+4. **Use Claude's CSS-First Techniques:** Utilize `data-transition` attributes, CSS custom properties (`--slot-index`) for staggering, and `steps()` easing for the retro feel.
+5. **Implement Copy Exhaustiveness Tests:** Adopt Codex's idea for a test that fails if any enum value lacks corresponding flavor text. This guarantees the personality pass doesn't degrade over time.
+6. **Centralize Copy Moderately:** A single `src/ui/copy.ts` (Claude's approach) is fine, but organize it strictly by domain (Animals, Powers, UI) to get the benefits of Codex's structure without the file sprawl.

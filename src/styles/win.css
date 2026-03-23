@@ -7,11 +7,26 @@
     linear-gradient(180deg, rgba(241, 254, 244, 0.95) 0%, rgba(220, 243, 228, 0.95) 100%);
   padding: 1.2rem;
   text-align: center;
+  animation: pop-in 320ms var(--motion-ease) both;
 }
 
 .win-screen h1 {
   margin-top: 0;
   text-transform: uppercase;
+}
+
+.win-title {
+  margin: 0 auto 0.45rem;
+  width: 21ch;
+  max-width: 100%;
+  clip-path: inset(0 100% 0 0);
+  white-space: nowrap;
+  animation: win-type 900ms steps(26, end) both;
+}
+
+.win-quip {
+  font-weight: 700;
+  color: #1f5f42;
 }
 
 .win-screen p {
@@ -35,6 +50,10 @@
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
+  opacity: 0;
+  transform: scale(0.86);
+  animation: pop-in 300ms var(--motion-step-retro) both;
+  animation-delay: calc(450ms + (var(--ribbon-index) * 500ms));
 }
 
 .win-ribbon-pill .animal-sprite {
@@ -48,4 +67,23 @@
   background: linear-gradient(180deg, #ffffff 0%, #dcf2e5 100%);
   padding: 0.55rem 1rem;
   font-weight: 700;
+  opacity: 0;
+  transform: translateY(8px);
+  animation: slide-in-up 260ms var(--motion-step-retro) both;
+  animation-delay: calc(750ms + (var(--winner-count) * 500ms));
+}
+
+.win-play-again:hover,
+.win-play-again:focus-visible {
+  transform: translateY(-2px);
+}
+
+@keyframes win-type {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+
+  to {
+    clip-path: inset(0 0 0 0);
+  }
 }

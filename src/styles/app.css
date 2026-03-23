@@ -29,6 +29,22 @@ button {
   font: inherit;
   text-transform: uppercase;
   letter-spacing: 0.04em;
+  cursor: pointer;
+  transition:
+    transform var(--motion-hover) var(--motion-ease),
+    box-shadow var(--motion-hover) var(--motion-ease),
+    filter var(--motion-hover) var(--motion-ease),
+    opacity var(--motion-hover) var(--motion-ease);
+}
+
+button:active {
+  transform: scale(0.96);
+  transition-duration: var(--motion-press);
+}
+
+button:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .app-shell {
@@ -36,11 +52,20 @@ button {
   padding: 1rem;
   position: relative;
   overflow: hidden;
+  transition: opacity var(--motion-transition) var(--motion-ease);
 }
 
 .app-shell > * {
   position: relative;
   z-index: 1;
+}
+
+.app-shell[data-transition='exiting'] {
+  opacity: 0.72;
+}
+
+.app-shell[data-transition='entering'] {
+  animation: fade-in var(--motion-transition) var(--motion-ease) both;
 }
 
 .app-shell[data-phase='night'],
@@ -140,6 +165,21 @@ button {
   grid-template-columns: repeat(10, minmax(4.2rem, 1fr));
   gap: 0.38rem;
   min-width: 46rem;
+  position: relative;
+  transform-origin: center;
+}
+
+.barn-grid.busted {
+  animation: screen-shake 400ms var(--motion-step-retro);
+}
+
+.barn-grid.busted::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(170, 42, 32, 0.28);
+  pointer-events: none;
+  animation: fade-in 150ms linear both;
 }
 
 .barn-slot {
@@ -155,15 +195,52 @@ button {
   gap: 0.06rem;
   position: relative;
   box-shadow: inset 0 -2px 0 rgba(59, 33, 18, 0.18);
+  transition:
+    transform var(--motion-hover) var(--motion-ease),
+    box-shadow var(--motion-hover) var(--motion-ease),
+    filter var(--motion-hover) var(--motion-ease),
+    opacity var(--motion-hover) var(--motion-ease);
+  cursor: pointer;
 }
 
 .barn-slot:hover {
   transform: translateY(-1px);
+  box-shadow:
+    inset 0 -2px 0 rgba(59, 33, 18, 0.18),
+    0 0 0 2px rgba(208, 112, 42, 0.25);
 }
 
 .barn-slot.selected {
   outline: 3px solid var(--accent);
   outline-offset: 1px;
+}
+
+.barn-slot.guest-enter {
+  animation: bounce-in 340ms var(--motion-step-retro) both;
+  animation-delay: calc(var(--slot-index) * 40ms);
+}
+
+.barn-slot.stack-pulse .slot-stack {
+  animation: count-pulse 280ms var(--motion-step-retro) both;
+}
+
+.barn-slot.ability-attention .slot-meta {
+  animation: flash-attention 900ms ease-in-out infinite;
+}
+
+.barn-slot.ability-fired {
+  box-shadow:
+    inset 0 0 0 2px rgba(245, 216, 135, 0.8),
+    0 0 12px rgba(245, 216, 135, 0.7);
+}
+
+.barn-slot.idle-bob {
+  animation: hover-bob 2200ms steps(2, end) infinite;
+  animation-delay: calc(var(--slot-index) * 80ms);
+}
+
+.barn-slot.bust-fade {
+  animation: fade-out 320ms ease forwards;
 }
 
 .barn-slot-window,
@@ -235,6 +312,12 @@ button {
 .slot-label {
   font-size: 0.58rem;
   line-height: 1.1;
+  word-break: break-word;
+}
+
+.slot-meta.ability-spent {
+  opacity: 0;
+  transform: translateY(-3px);
 }
 
 .slot-stack {
@@ -263,6 +346,17 @@ button {
   font-size: 1.05rem;
 }
 
+.inspector-quip {
+  font-weight: 700;
+  color: #55321a;
+}
+
+.inspector-note {
+  border: 1px dashed #8f5b2a;
+  background: rgba(255, 247, 231, 0.8);
+  padding: 0.3rem;
+}
+
 .inspector button {
   display: block;
   width: 100%;
@@ -272,6 +366,18 @@ button {
   box-shadow: 2px 2px 0 #4e2d17;
   padding: 0.45rem;
   font-weight: 700;
+}
+
+.inspector button:hover,
+.inspector button:focus-visible,
+.target-list button:hover,
+.target-list button:focus-visible,
+.summary-card button:hover,
+.summary-card button:focus-visible,
+.targeting-card > button:hover,
+.targeting-card > button:focus-visible {
+  transform: translateY(-1px);
+  box-shadow: 3px 3px 0 #4e2d17;
 }
 
 .inspector button:disabled {
@@ -308,6 +414,7 @@ button {
   padding: 1rem;
   background: rgba(16, 9, 5, 0.62);
   z-index: 30;
+  animation: fade-in 160ms linear both;
 }
 
 .targeting-card,
@@ -317,11 +424,38 @@ button {
   border: 3px solid #472a17;
   box-shadow: 5px 5px 0 #2b1709;
   padding: 1rem;
+  animation: pop-in 260ms var(--motion-step-retro) both;
 }
 
 .summary-card h2 {
   margin-top: 0;
   text-transform: uppercase;
+}
+
+.summary-quip {
+  font-weight: 700;
+  color: #55321a;
+}
+
+.summary-totals {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.4rem;
+  margin-bottom: 0.75rem;
+}
+
+.summary-total-row {
+  margin: 0;
+  border: 2px solid #8f6b44;
+  background: #fff8eb;
+  padding: 0.35rem 0.45rem;
+  display: flex;
+  justify-content: space-between;
+  gap: 0.4rem;
+}
+
+.summary-total-row strong {
+  animation: count-pulse 220ms var(--motion-step-retro);
 }
 
 .target-list {
@@ -349,6 +483,56 @@ button {
   background: #fff8eb;
 }
 
+.summary-event {
+  animation: slide-in-up 220ms var(--motion-step-retro) both;
+  animation-delay: calc(var(--event-index) * 80ms);
+}
+
+.summary-skip-hint {
+  margin-top: 0.5rem;
+  font-size: 0.74rem;
+}
+
+.phase-curtain {
+  position: fixed;
+  inset: 0;
+  border: 0;
+  z-index: 45;
+  background:
+    linear-gradient(180deg, rgba(42, 24, 13, 0.95) 0%, rgba(20, 11, 6, 0.96) 100%);
+  color: #f8ecd3;
+  display: grid;
+  place-items: center;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.phase-curtain.exiting {
+  animation: fade-in 180ms linear both;
+}
+
+.phase-curtain.entering {
+  animation: fade-out 220ms linear both;
+}
+
+.phase-curtain-label {
+  border: 2px solid rgba(248, 236, 211, 0.7);
+  padding: 0.55rem 0.75rem;
+  background: rgba(248, 236, 211, 0.08);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 @media (max-width: 1120px) {
   .status-bar {
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -366,5 +550,15 @@ button {
 
   .app-shell {
     padding: 0.7rem;
+  }
+
+  .summary-totals {
+    grid-template-columns: 1fr;
+  }
+
+  .phase-curtain-label {
+    width: min(96vw, 24rem);
+    text-align: center;
+    word-break: break-word;
   }
 }

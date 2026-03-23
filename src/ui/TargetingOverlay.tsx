@@ -1,3 +1,4 @@
+import { TARGETING_COPY } from '../content/copy';
 import { getDefinition } from '../game/catalog';
 import { findOwnedAnimal } from '../game/selectors';
 import type { GameState } from '../game/types';
@@ -14,7 +15,7 @@ const targetLabel = (gameState: GameState, targetId: string): string => {
     return targetId;
   }
 
-  return `${getDefinition(animal.animalId).name} (${targetId})`;
+  return getDefinition(animal.animalId).name;
 };
 
 export const TargetingOverlay = ({ gameState, onSelectTarget, onCancel }: TargetingOverlayProps) => {
@@ -23,20 +24,14 @@ export const TargetingOverlay = ({ gameState, onSelectTarget, onCancel }: Target
     return null;
   }
 
-  const targets =
-    targeting.kind === 'fetch' ? gameState.night.drawPileIds : gameState.night.barnResidentIds;
-
-  const title =
-    targeting.kind === 'fetch'
-      ? 'Fetch a guest from the farm'
-      : targeting.kind === 'kick'
-        ? 'Kick a guest from the barn'
-        : 'Pick one guest to pin for next night';
+  const targets = targeting.kind === 'fetch' ? gameState.night.drawPileIds : gameState.night.barnResidentIds;
+  const copy = TARGETING_COPY[targeting.kind];
 
   return (
     <div className="targeting-overlay" role="dialog" aria-modal="true" aria-label="Targeting">
       <div className="targeting-card">
-        <h3>{title}</h3>
+        <h3>{copy.title}</h3>
+        <p>{copy.support}</p>
         <div className="target-list">
           {targets.map((targetId) => (
             <button key={targetId} type="button" onClick={() => onSelectTarget(targetId)}>

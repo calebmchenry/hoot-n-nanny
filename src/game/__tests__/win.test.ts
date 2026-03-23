@@ -39,6 +39,9 @@ describe('win condition', () => {
 
     expect(next.phase).toBe('night-summary');
     expect(next.lastNightSummary?.outcome).toBe('score-to-win');
+    expect(next.lastNightSummary?.events.length).toBeGreaterThanOrEqual(1);
+    expect(next.lastNightSummary?.popBefore).toBe(0);
+    expect(next.lastNightSummary?.cashBefore).toBe(0);
   });
 
   it('returns score-to-shop when only 2 blue-ribbon animals are in barn', () => {

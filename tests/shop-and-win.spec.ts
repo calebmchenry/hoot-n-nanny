@@ -1,5 +1,9 @@
 import { expect, test } from '@playwright/test';
 
+test.beforeEach(async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+});
+
 test('shop purchase round-trip adds animal to next night farm', async ({ page }) => {
   await page.goto('/?seed=shop');
 

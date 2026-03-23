@@ -1,0 +1,7 @@
+Sprint selection written to `docs/sprints/drafts/SPRINT-SELECTION.md`.
+
+**Selected: Items 24 (Humor & Personality Pass) + 25 (Animation Polish)**
+
+The core game loop is complete after Sprint 002. These two items are the natural next step because they both polish the same UI surfaces (animal cards, phase transitions, scoring, shop) and reinforce the same goal — giving the game its "goofy, warm, scrappy" personality through both written voice and visual motion. Doing them together avoids redundant passes through the same code and lets animation and humor decisions inform each other.
+
+Audio (15–23) was excluded because it requires sourcing/generating actual audio files — different work entirely. CI/CD and final QA are end-stage tasks that should come after all content is in place.

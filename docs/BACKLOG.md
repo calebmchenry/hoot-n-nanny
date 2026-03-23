@@ -1,6 +1,6 @@
 # Hoot N' Nanny — Backlog
 
-Completed through Sprint 002 + validation implementation: items 1-14 (core playable loop, powers, scoring, shop phase, win condition, foundational UI, barn art direction, sprite pass, and responsive layout).
+Completed through Sprint 003 + validation implementation: items 1-25 (core playable loop, powers, scoring, shop phase, win condition, personality pass, animation polish, and foundational UX).
 Remaining items are below.
 
 ---
@@ -37,12 +37,6 @@ Soft clicks or wooden tap sounds for hovering, selecting, and navigating slots.
 ---
 
 ## LOW PRIORITY
-
-### 24. Humor & Personality Pass
-Add flavor text, witty ability descriptions, and personality to UI copy. Goofy, warm tone — don't take itself seriously.
-
-### 25. Animation Polish
-Smooth transitions between phases, animal entry animations, scoring tally animations, and general juice.
 
 ### 26. GitHub Pages CI/CD
 Configure automated deployment so a push to main deploys the static site to GitHub Pages.

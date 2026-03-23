@@ -10,7 +10,6 @@ const defaultNightState = (): NightState => ({
   peekedNextId: null,
   bust: false,
   pinnedForNextNight: null,
-  resolutionLog: [],
   targeting: null,
   calledItNight: false,
   autoEnded: false
@@ -101,6 +100,28 @@ export const createSeededShopState = (): GameState => ({
   pop: 120,
   cash: 20
 });
+
+export const createSeededAbilityReminderState = (): GameState => {
+  const base = createInitialGameState('seeded-ability');
+  let nextId = base.nextInstanceNumber;
+
+  const owl = createOwnedAnimal('owl', nextId);
+  nextId += 1;
+  const goat = createOwnedAnimal('goat', nextId);
+  nextId += 1;
+
+  return {
+    ...base,
+    nextInstanceNumber: nextId,
+    barnCapacity: 1,
+    ownedAnimals: [...base.ownedAnimals, owl, goat],
+    night: {
+      ...base.night,
+      barnResidentIds: [owl.instanceId],
+      drawPileIds: [goat.instanceId]
+    }
+  };
+};
 
 export const startNextNight = (gameState: GameState, rng: Rng = Math.random): GameState => ({
   ...gameState,

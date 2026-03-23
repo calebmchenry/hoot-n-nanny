@@ -1,0 +1,14 @@
+{
+  "outcome": "failure",
+  "status": "failure",
+  "node_id": "backlog_gate",
+  "preferred_label": null,
+  "suggested_next_ids": [],
+  "context_updates": {
+    "tool.exit_code": "1"
+  },
+  "notes": "Exit code 1",
+  "started_at": "2026-03-23T05:52:40.431Z",
+  "completed_at": "2026-03-23T05:52:40.454Z",
+  "duration_ms": 23
+}

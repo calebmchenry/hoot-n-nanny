@@ -1,286 +1,319 @@
-# Sprint 002: Trading Post & Victory
+# Sprint 003 — "Personality & Polish"
 
 ## Overview
 
-This sprint closes the game loop. After Sprint 001, the player can play Hootenanny nights indefinitely but their Pop and Cash have no outlet, the deck never changes, and there's no win state. This sprint adds the Trading Post (shop phase), the night-to-shop-to-night transition, and the blue-ribbon win condition. When it ships, every subsequent sprint is polish.
+This sprint takes Hoot N' Nanny from functional to *charming*. The game loop is complete — every mechanic works, every phase exists — but the experience is flat. Transitions are instant. Animals appear without ceremony. Scoring is a static readout. The UI has no voice.
 
-Three backlog items are covered:
+Sprint 003 adds two things: **animation juice** (items 25) and **written personality** (item 24). These are deeply coupled — a witty description that slides in with a bounce lands differently than one that simply appears. A scoring tally that counts up while a fun quip plays underneath it feels alive. Doing them together means every surface gets one cohesive pass instead of two disjoint ones.
 
-- **#7 — Shop Phase (Trading Post)**: stock generation, purchasing animals with Pop, buying barn capacity upgrades with Cash, and the transition flow between phases.
-- **#8 — Win Condition**: 3 blue-ribbon animals in the barn when calling it a night triggers a win state and ends the game.
-- **#11 — Shop UI**: animal cards with image, stock, cost, ability icon, currencies, hover/focus ability text, walking-in-place animation on hover, and a "hootenanny" button to leave.
+**What "done" looks like:** The game feels like it was made by someone who loves it. Animals bounce into the barn. Scoring counts up dramatically. Phase transitions have visual rhythm. Every piece of UI copy has a voice — warm, goofy, a little bit country. A stranger landing on the GitHub Pages link should smile within the first 10 seconds.
 
-The sprint does **not** touch: art direction, responsive layout polish, audio, humor pass, CI/CD, or final QA. Placeholder visuals from Sprint 001 carry forward.
+---
 
 ## Architecture
 
-### Where the Shop Plugs In
+### Design Principles
 
-Sprint 001's `NightSummaryModal` is the seam. Currently it offers "start next night." This sprint replaces that with a phase router:
+1. **CSS-first animation.** Every animation uses CSS transitions and `@keyframes`. No JavaScript animation libraries — the bundle stays small, animations are GPU-composited, and the retro aesthetic benefits from discrete `steps()` easing. JS only orchestrates *when* classes are applied, never *how* things move.
 
-```
-Night → NightSummary → TradingPost → Night → ... → Win
-```
+2. **Copy lives in data, not components.** All flavor text, quips, and UI copy moves into dedicated data files (`src/ui/copy.ts` for UI strings, extended `description` fields in `catalog.ts` for animals). Components render what they're given. This keeps the personality layer editable without touching rendering code.
 
-A new top-level `phase` field on `GameState` drives which scene renders:
+3. **Animation states flow through game state.** Phase transitions get a brief intermediate state (e.g., `night-entering`, `shop-entering`) so CSS can hook into entry/exit animations via data attributes. The game engine controls timing; CSS controls visuals.
 
-```typescript
-type GamePhase = 'night' | 'night-summary' | 'shop' | 'win';
-```
+4. **No new dependencies.** Everything is achievable with CSS animations, Preact's existing rendering model, and a single new `copy.ts` file. The bundle budget stays untouched.
 
-`App.tsx` switches on `phase` to render the appropriate scene. No router library — a single conditional render.
+### Key Architectural Decisions
 
-### Shop State
+- **Staggered entry via CSS `animation-delay` computed from slot index**, not JS timeouts. Each barn slot gets `--slot-index` as a CSS custom property; the animation delay is `calc(var(--slot-index) * 60ms)`. Simple, declarative, no cleanup.
 
-Add `ShopState` alongside `NightState`:
+- **Scoring tally uses a lightweight JS counter** (requestAnimationFrame loop in NightSummaryModal) that increments displayed numbers toward their targets. This is the one place JS drives animation because CSS can't animate text content. The counter is ~20 lines, not a library.
 
-```typescript
-interface ShopState {
-  regularStock: ShopSlot[];   // 10 slots
-  blueRibbonStock: ShopSlot[]; // 2 slots
-}
+- **Phase transition timing uses a `transitionPhase` field on game state** — a string like `'barn-to-summary'` | `'summary-to-shop'` | `'shop-to-barn'` | `null`. The App component sets this before changing `phase`, waits ~400ms via setTimeout, then updates `phase`. Components use `data-transition` attributes to trigger CSS exit/enter animations.
 
-interface ShopSlot {
-  animalId: string;
-  quantity: number;  // decremented on purchase; blue-ribbon slots are unlimited
-  cost: number;
-}
-```
-
-`ShopState` is generated once per shop visit when transitioning from night summary. It is discarded when the player leaves the shop.
-
-### Stock Generation
-
-Each shop visit draws 10 distinct regular animal types from the 14-animal pool (excluding Goat, which is `not in shop`). So the eligible regular pool is: Bull, Goose, Chicken, Pig, Cow, Mouse, Owl, Barn Cat, Sheep, Swan, Bunny, Border Collie, Donkey — 13 animals. Shuffle and take 10. Each regular slot stocks **3 copies**.
-
-Blue-ribbon slots: draw 2 distinct types from the 5 blue-ribbon animals. Unlimited stock (display "∞").
-
-This gives variety between shop visits without requiring persistent shop state across nights.
-
-### Barn Capacity Upgrades
-
-Cash buys barn capacity. Pricing formula: **base cost 2 Cash, +1 Cash per upgrade already purchased this game.** So the sequence is 2, 3, 4, 5, ... This keeps early upgrades accessible while making late-game capacity expensive. Each purchase adds 1 barn slot. The upgrade is displayed as a dedicated UI element in the shop, not as an animal card.
-
-### Purchase Flow
-
-Purchasing an animal:
-1. Check player has enough Pop.
-2. Deduct Pop from `GameState`.
-3. Create a new `OwnedAnimal` instance (new `instanceId`).
-4. Add to the player's farm collection.
-5. Decrement stock quantity (skip for blue-ribbon — unlimited).
-
-Purchasing barn capacity:
-1. Check player has enough Cash.
-2. Deduct Cash.
-3. Increment `barnCapacity` on `GameState`.
-4. Track `capacityUpgradeCount` for pricing.
-
-All purchase logic lives in `src/game/shop.ts` as pure functions, same pattern as the night engine.
-
-### Win Condition
-
-The win check runs at the end of the scoring pipeline in `engine.ts`, after all End-of-Night effects resolve:
-
-1. Count blue-ribbon animals currently in the barn.
-2. If count ≥ 3, set `phase` to `'win'`.
-
-The check only runs when the player calls it a night (not on bust). This is intentional — the player must successfully score with 3 blue-ribbon animals in the barn, not just have them there when busting.
-
-### What Changes in Existing Files
-
-| Existing File | Change |
-| --- | --- |
-| `src/game/types.ts` | Add `GamePhase`, `ShopState`, `ShopSlot`, `capacityUpgradeCount` to `GameState` |
-| `src/game/state.ts` | Add `initShopState()`, `applyShopTransition()`, phase transition helpers |
-| `src/game/engine.ts` | Add win-condition check at end of scoring pipeline |
-| `src/game/selectors.ts` | Add `canAfford()`, `shopSlotDetails()`, `upgradePrice()`, `blueRibbonBarnCount()` selectors |
-| `src/app/App.tsx` | Phase-based scene switching |
-| `src/ui/NightSummaryModal.tsx` | "Continue to Trading Post" replaces "Start Next Night" |
+---
 
 ## Implementation Phases
 
-### Phase 1 — Shop Domain Model & Stock Generation
+### Phase 1: Animation Infrastructure (est. ~30% of work)
 
-Extend `types.ts` with `GamePhase`, `ShopState`, `ShopSlot`, and `capacityUpgradeCount`. Write `src/game/shop.ts` with:
+**Goal:** Build the plumbing that all animations hook into.
 
-- `generateShopStock(rng): ShopState` — draws 10 regular + 2 blue-ribbon types, assigns quantities.
-- `purchaseAnimal(gameState, shopState, slotIndex): { gameState, shopState }` — validates affordability, deducts Pop, creates `OwnedAnimal`, decrements stock.
-- `purchaseCapacity(gameState): gameState` — validates Cash, deducts, increments capacity and upgrade count.
-- `upgradePrice(gameState): number` — returns current capacity upgrade cost.
+1. **Add `transitionPhase` to `GameState`** in `types.ts`. Values: `'exiting-night'` | `'entering-summary'` | `'exiting-summary'` | `'entering-shop'` | `'exiting-shop'` | `'entering-night'` | `null`.
 
-Write tests for:
-- Stock generation produces exactly 10 regular + 2 blue-ribbon, no duplicates within category, Goat excluded from regulars.
-- Purchase deducts correct Pop, creates correct `OwnedAnimal`, decrements stock.
-- Blue-ribbon purchase does not decrement stock.
-- Insufficient funds purchase is rejected (returns unchanged state).
-- Capacity upgrade pricing sequence is correct (2, 3, 4, 5, ...).
-- Capacity upgrade with insufficient Cash is rejected.
+2. **Update `App.tsx` reducer** to handle a new `SET_TRANSITION` intent. When the engine produces a phase change (e.g., `CONTINUE_FROM_SUMMARY` → shop), the reducer:
+   - Sets `transitionPhase` to the exit value
+   - After 350ms (setTimeout), sets `transitionPhase` to the enter value and updates `phase`
+   - After another 350ms, clears `transitionPhase` to `null`
 
-**Exit criteria**: `shop.ts` and its tests pass. No UI yet.
+3. **Add `data-transition` attribute** to the root layout containers in `App.tsx` so CSS can target `[data-transition="exiting-night"]`, etc.
 
-### Phase 2 — Win Condition Logic
+4. **Create `src/styles/animations.css`** with shared keyframes:
+   - `@keyframes slide-in-up` — entrance from below (elements)
+   - `@keyframes slide-out-down` — exit downward
+   - `@keyframes fade-in` / `@keyframes fade-out`
+   - `@keyframes pop-in` — scale from 0.8 to 1.0 with overshoot to 1.05
+   - `@keyframes bounce-in` — for animals entering barn slots
+   - `@keyframes count-pulse` — subtle scale pulse for number changes
+   - `@keyframes wiggle` — small rotation wiggle for emphasis
+   - `@keyframes flash-attention` — opacity pulse for activate ability reminder
 
-Add `blueRibbonBarnCount` selector to `selectors.ts`. Modify the scoring pipeline in `engine.ts` to check for win after End-of-Night effects. The check: if `blueRibbonBarnCount >= 3` and the player called it a night (not bust), set `phase` to `'win'`.
+5. **Add `--slot-index` CSS custom property** to barn slot rendering in `BarnGrid.tsx`.
 
-Write tests for:
-- 3 blue-ribbon animals in barn on call-it-a-night → win.
-- 2 blue-ribbon animals in barn → no win, proceed to shop.
-- 3 blue-ribbon animals in barn but player busted → no win, proceed to shop (bust skips scoring).
-- Mix of blue-ribbon and regular animals, 3+ blue-ribbon → win.
+### Phase 2: Barn Animations (est. ~25% of work)
 
-**Exit criteria**: win condition is testable purely through the engine with no UI.
+**Goal:** The hootenanny phase feels alive.
 
-### Phase 3 — Phase Transitions & App Router
+1. **Animal entry animation.** When an animal is invited, its barn slot gets class `entering`. CSS: `animation: bounce-in 300ms steps(4, end) both; animation-delay: calc(var(--slot-index) * 0ms)` (no stagger for single entry — stagger is for initial barn load if we ever show it). The bounce uses `steps()` for the retro pixel-snap feel.
 
-Add `phase` to `GameState` (default: `'night'`). Update `App.tsx` to render based on phase:
+2. **Barn slot idle micro-animation.** Animals in the barn get a very subtle `hover-bob` (1px up/down, 2s loop, `steps(2, end)`). Staggered by slot index so they don't all bob in sync. This makes the barn feel alive even when the player isn't acting.
 
-- `'night'` → existing barn scene
-- `'night-summary'` → existing `NightSummaryModal` (modified)
-- `'shop'` → new `TradingPost` component (placeholder for now)
-- `'win'` → new `WinScreen` component (placeholder for now)
+3. **Ability activation feedback.** When an activate ability is used:
+   - The slot gets class `ability-fired` → brief flash/glow (box-shadow pulse, 200ms)
+   - The power badge fades out with `fade-out 200ms`
 
-Modify `NightSummaryModal`:
-- After scoring, transition button says "Visit the Trading Post" and sets phase to `'shop'`.
-- After bust, same transition (bust still leads to shop per game design).
+4. **Activate ability reminder.** When the barn is at capacity and unused activate abilities exist, those slots get class `attention` → `flash-attention` animation (opacity 0.7↔1.0, 800ms loop). Per the game design doc: "flash tastefully."
 
-Add `startNextNight()` that generates a new `NightState` from the current `GameState` and sets phase back to `'night'`.
+5. **Bust animation.** On bust:
+   - Barn container gets class `busted` → `screen-shake` keyframe (4-frame shake, 400ms)
+   - All animal slots simultaneously get `fade-out` (200ms delay after shake)
+   - Red overlay flash (pseudo-element, opacity 0→0.3→0, 500ms)
 
-Wire up the full cycle: night → summary → shop → night.
+6. **Door and window interaction feedback.** Clicking the door or window gets a `pop-in` animation on the icon. Selected state gets a subtle glow (box-shadow transition).
 
-**Exit criteria**: clicking through the full loop works with placeholder shop and win screens. The game never gets stuck.
+### Phase 3: Scoring & Summary Animation (est. ~15% of work)
 
-### Phase 4 — Trading Post UI
+**Goal:** Scoring feels dramatic and rewarding.
 
-Build `src/ui/TradingPost.tsx` as the shop scene. Layout:
+1. **Tally counter animation.** In `NightSummaryModal.tsx`, replace static number display with an animated counter:
+   - Pop counts up from 0 → final value over ~1.5s (ease-out curve)
+   - Cash counts up similarly, starting 500ms after Pop finishes
+   - Each number gets `count-pulse` animation on each increment
+   - Use `requestAnimationFrame` with a simple lerp
 
-**Top bar**: current Pop, current Cash, night counter (carried from game state).
+2. **Resolution log stagger.** Each line item in the scoring log slides in from the left with 80ms stagger (CSS `animation-delay` computed from index). Items enter as the counter reaches their contribution.
 
-**Shop grid**: 12 animal cards (10 regular + 2 blue-ribbon). Each card shows:
-- Animal name
-- Placeholder image (colored rectangle with animal initial, same as Sprint 001 barn placeholders)
-- Stock quantity (number for regular, "∞" for blue-ribbon)
-- Cost in Pop
-- Ability icon badge (reuse Sprint 001's power badge component)
-- Currency reward chips (Pop/Cash amounts the animal generates)
-- Blue-ribbon cards get a distinct border or ribbon badge
+3. **Summary modal entrance.** The modal backdrop fades in (200ms) while the content panel slides up with `pop-in` (300ms, 100ms delay).
 
-**Interaction**:
-- Hover/focus on a card → ability explanation text appears in an info panel. When nothing is focused, the info panel shows "Shop for upgrades."
-- Hover/focus triggers a CSS walking-in-place animation on the placeholder sprite (simple 2-frame vertical bob).
-- Click/tap/Enter on an affordable card → purchase confirmation is immediate (no modal). The card updates: stock decrements, Pop updates, new animal appears in farm. If stock hits 0, card greys out.
-- Click/tap on an unaffordable card → no-op, card is visually dimmed.
+4. **"Call It a Night" button feedback.** When clicked, the button gets a brief press animation (scale 0.95, 100ms) before the transition fires.
 
-**Barn capacity upgrade**: a separate panel below or beside the grid showing current capacity, upgrade cost in Cash, and a buy button. Displays the formula implicitly: "Expand barn: 3 Cash" (where 3 is the current price).
+### Phase 4: Shop & Phase Transition Animation (est. ~15% of work)
 
-**"Hootenanny" button**: prominent button at the bottom. Clicking it calls `startNextNight()` and transitions to the night phase.
+**Goal:** Moving between phases feels smooth; the shop is tactile.
 
-**Keyboard support**: arrow keys navigate the shop grid and upgrade button. Enter purchases. Tab cycles between the grid, upgrade, and hootenanny button. Escape does nothing (no cancel state in shop).
+1. **Phase transition choreography.**
+   - Night → Summary: barn dims (opacity 0.5, 300ms), summary modal slides up
+   - Summary → Shop: summary slides down, barn fades out, shop fades in from below
+   - Shop → Night: shop slides out right, barn fades in with a brief "curtain rising" feel (slide from bottom)
 
-**Exit criteria**: a player can browse, read abilities, purchase animals, upgrade capacity, and leave the shop. All interactions work with mouse and keyboard.
+2. **Shop card entrance.** Cards stagger in with `slide-in-up` + `fade-in`, 50ms apart. Blue ribbon cards enter last with a slightly bigger `pop-in` to draw attention.
 
-### Phase 5 — Win Screen
+3. **Purchase feedback.** On buying an animal:
+   - The card gets `wiggle` animation (200ms)
+   - Pop/Cash counters in the header pulse with `count-pulse`
+   - Stock number decrements with a brief fade-swap
 
-Build `src/ui/WinScreen.tsx`. Simple and celebratory:
+4. **Sold-out transition.** When stock hits 0, the card gets class `sold-out-transition` → grayscale filter fades in over 300ms, opacity dims.
 
-- "You did it!" or similar heading
-- Night count: "Won on Night X"
-- Final Pop and Cash totals
-- List of the 3+ blue-ribbon animals that triggered the win
-- "Play Again" button that resets `GameState` to starter deck and goes to night phase
+5. **Hootenanny button.** Pulsing subtle glow when the player has enough resources for something meaningful (or always, to draw them forward). Brief `pop-in` on hover.
 
-No animation or audio in this sprint — just a clean, satisfying screen.
+### Phase 5: Humor & Personality Pass (est. ~15% of work)
 
-**Exit criteria**: winning triggers the screen, all stats are correct, "Play Again" resets cleanly.
+**Goal:** Every piece of text has a voice.
 
-### Phase 6 — Integration, Polish & Smoke Tests
+1. **Create `src/ui/copy.ts`** — centralized UI copy:
+   ```typescript
+   export const COPY = {
+     // Phase titles
+     nightTitle: (n: number) => `Night ${n} — Let's Get Loud`,
+     shopTitle: 'The Trading Post',
 
-- Playtest the full loop manually: night → shop → night → ... → win. Verify:
-  - Pop and Cash persist correctly across phases
-  - Purchased animals appear in the farm on the next night
-  - Barn capacity upgrades take effect immediately on the next night
-  - Blue-ribbon animals function correctly in the barn (their powers work, they count toward win)
-  - Stock generation varies between shop visits
-  - Edge case: entering shop with 0 Pop and 0 Cash (player can still browse and leave)
-  - Edge case: winning on the same night you would have wanted to shop
-- Add Playwright smoke test: `tests/shop-and-win.spec.ts`
-  - Path 1: play a night, visit shop, buy an animal, return to night, verify animal is in farm
-  - Path 2: (seeded/mocked) reach win condition, verify win screen appears and "Play Again" resets
-- Verify all existing Sprint 001 tests still pass — no regressions in night engine
-- Verify bundle size stays under 150 KB gzipped
+     // Actions
+     inviteGuest: 'Invite a Guest',
+     callItANight: 'Call It a Night',
+     hootenanny: 'Back to the Barn!',
 
-**Exit criteria**: full game loop works end-to-end, all tests pass, no regressions.
+     // Inspector - empty states
+     shopForUpgrades: 'Browse the goods, partner.',
+
+     // Scoring
+     bustMessage: 'The farmer woke up! Party\'s over.',
+     winMessage: 'Three blue ribbons! You\'re a legend.',
+
+     // Randomized flavor
+     bustQuips: [
+       'Somebody woke the farmer. Scatter!',
+       'Too much noise! The rooster\'s crowing.',
+       'Busted. The barn goes quiet.',
+       'You pushed your luck and your luck pushed back.',
+     ],
+     nightStartQuips: [
+       'The barn doors creak open...',
+       'Another night, another hootenanny.',
+       'The animals are restless. Let\'s party.',
+       'Who\'s coming to the barn tonight?',
+     ],
+     scoringQuips: [
+       'Not bad for a barn party.',
+       'The crowd goes mild!',
+       'Ka-ching! Well, ka-cluck.',
+       'Tallying up the good times.',
+     ],
+     shopQuips: [
+       'What\'ll it be, partner?',
+       'Fresh critters, fair prices.',
+       'Upgrade your farm, upgrade your life.',
+       'Every animal deserves a party.',
+     ],
+   }
+   ```
+
+2. **Rewrite animal descriptions in `catalog.ts`.** Every animal gets a flavorful 1-2 sentence description. Examples:
+   - Goat: `"Loud, proud, and not sorry about it. Has never once been invited to a party politely."`
+   - Chicken: `"Doesn't do much, but shows up reliably. The friend who brings nothing to the potluck but good vibes."`
+   - Owl: `"Knows who's coming next. Annoyingly smug about it."`
+   - Border Collie: `"Can fetch literally anyone from anywhere. Has never not been a good boy."`
+   - Dragon: `"Kicks out whoever it wants. Nobody argues with a dragon."`
+   - Swan: `"Gets more popular every time it shows up. The swan knows what the swan is worth."`
+
+3. **Add power flavor text** — each power ID gets a short personality description beyond the mechanical one:
+   - Noisy: `"Can't help it. Born this way."`
+   - Stacks: `"The more the merrier — and they only take up one spot."`
+   - Calm: `"Shhhh. It's handling the noise situation."`
+   - Fetch: `"Goes and gets exactly who you want. Good boy/girl/creature."`
+
+4. **Season all UI touchpoints:**
+   - Inspector panel: contextual quips when selecting animals, door, window
+   - Shop inspector: personality in the hover descriptions
+   - Night summary: randomized quip above the tally
+   - Win screen: celebratory flavor text, not just "You win"
+   - Bust screen: commiserating quip
+   - Targeting overlay: flavor-appropriate headers ("Who's getting the boot?" for kick, "Who are you fetching?" for fetch)
+
+5. **Tooltip-style flavor on shop cards.** When hovering/focusing a shop card, the inspector shows the animal's personality description *above* the mechanical description. Personality first, then rules.
+
+### Phase 6: Win Screen & Final Polish (est. ~remaining)
+
+**Goal:** The ending is memorable. Final consistency pass.
+
+1. **Win screen overhaul.**
+   - Blue ribbon animals enter one at a time with `pop-in` stagger (500ms apart)
+   - Confetti-style effect: CSS-only, using multiple animated pseudo-elements with random rotation and fall (3-4 "ribbons" falling, looped)
+   - Victory text types in character-by-character (CSS `steps()` animation on `max-width` or `clip-path`)
+   - "Play Again" button bounces in after the reveal
+
+2. **Button press feedback everywhere.** All interactive buttons get:
+   - `:active` → `transform: scale(0.96); transition: transform 80ms`
+   - Brief box-shadow reduction on press
+
+3. **Hover states audit.** Every interactive element should have:
+   - Cursor: pointer
+   - Subtle lift or glow on hover
+   - Color shift on disabled (not just opacity)
+
+4. **Consistency pass** — ensure animation timings, easings, and retro `steps()` usage are consistent across all components.
+
+---
 
 ## Files Summary
 
+### New Files
 | File | Purpose |
-| --- | --- |
-| `src/game/types.ts` | Extended with `GamePhase`, `ShopState`, `ShopSlot`, `capacityUpgradeCount` |
-| `src/game/shop.ts` | **New.** Stock generation, purchase logic, capacity upgrade — all pure functions |
-| `src/game/state.ts` | Extended with `initShopState()`, phase transition helpers, `startNextNight()` |
-| `src/game/engine.ts` | Extended with win-condition check in scoring pipeline |
-| `src/game/selectors.ts` | Extended with `canAfford()`, `upgradePrice()`, `blueRibbonBarnCount()`, `shopSlotDetails()` |
-| `src/app/App.tsx` | Phase-based conditional rendering of scenes |
-| `src/ui/TradingPost.tsx` | **New.** Shop scene: grid of animal cards, capacity upgrade, hootenanny button |
-| `src/ui/ShopCard.tsx` | **New.** Individual animal card: image, stats, hover animation, purchase action |
-| `src/ui/WinScreen.tsx` | **New.** Victory screen with stats and play-again |
-| `src/ui/NightSummaryModal.tsx` | Modified: "Visit the Trading Post" transition instead of "Start Next Night" |
-| `src/styles/shop.css` | **New.** Shop grid layout, card styling, hover animation, dimmed/sold-out states |
-| `src/styles/win.css` | **New.** Win screen styling |
-| `src/game/__tests__/shop.test.ts` | **New.** Unit tests for stock generation, purchases, capacity upgrades |
-| `src/game/__tests__/win.test.ts` | **New.** Unit tests for win condition logic |
-| `tests/shop-and-win.spec.ts` | **New.** Playwright smoke test for shop flow and win condition |
+|------|---------|
+| `src/ui/copy.ts` | Centralized UI copy, quips, flavor text |
+| `src/styles/animations.css` | Shared keyframes and animation utility classes |
+
+### Modified Files
+| File | Changes |
+|------|---------|
+| `src/game/types.ts` | Add `transitionPhase` to `GameState` |
+| `src/game/catalog.ts` | Rewrite all animal `description` fields with personality |
+| `src/game/engine.ts` | Minimal: ensure transition-related intents are handled cleanly |
+| `src/app/App.tsx` | Transition orchestration logic, `data-transition` attributes, import `animations.css` |
+| `src/ui/BarnGrid.tsx` | `--slot-index` CSS var, entry/attention/bust classes, idle bob |
+| `src/ui/NightSummaryModal.tsx` | Animated tally counter, staggered log, quip display, modal entrance animation |
+| `src/ui/InspectorPanel.tsx` | Import and use `copy.ts`, contextual quips, personality descriptions |
+| `src/ui/TradingPostScreen.tsx` | Card entrance stagger, purchase animation triggers, quip header |
+| `src/ui/ShopCard.tsx` | Purchase wiggle, sold-out transition, enhanced hover |
+| `src/ui/ShopInspector.tsx` | Personality-first descriptions from `copy.ts` |
+| `src/ui/TargetingOverlay.tsx` | Flavor-appropriate headers per ability type |
+| `src/ui/WinScreen.tsx` | Staggered reveal, confetti, character-by-character title, celebratory copy |
+| `src/styles/app.css` | Barn animations, bust shake, entry bounce, idle bob, button press, phase transitions |
+| `src/styles/shop.css` | Card entrance stagger, purchase feedback, sold-out transition, enhanced hovers |
+| `src/styles/win.css` | Confetti effect, staggered reveal, typewriter title |
+
+### Untouched Files
+| File | Reason |
+|------|--------|
+| `src/game/shop.ts` | No logic changes needed — shop generation stays the same |
+| `src/game/selectors.ts` | Read-only queries unchanged |
+| `src/game/rng.ts` | Untouched |
+| `src/input/useControls.ts` | Keyboard navigation unchanged |
+| `src/ui/BarnUpgradeCard.tsx` | Minor hover polish via shared CSS, no component changes |
+| `src/ui/AnimalSprite.tsx` | Sprites unchanged — animation happens at the slot level, not the SVG level |
+
+---
 
 ## Definition of Done
 
-- The full game loop works: night → summary → shop → night → ... → win → play again
-- Shop stocks exactly 10 regular animals (from the eligible 13, Goat excluded) and 2 blue-ribbon animals per visit, drawn randomly
-- Regular animals stock 3 copies each; blue-ribbon animals have unlimited stock
-- Shop stock varies between visits (different random draw each time)
-- The player can purchase animals with Pop; the animal appears in their farm on the next night
-- The player can purchase barn capacity upgrades with Cash; price follows the sequence 2, 3, 4, 5, ...
-- Each shop card displays: animal name, placeholder image, stock quantity (or ∞), cost, ability icon, and currency rewards
-- Hovering/focusing a card shows ability explanation text; idle state shows "Shop for upgrades"
-- Hovering/focusing a card triggers a walking-in-place placeholder animation
-- Cards for unaffordable or sold-out animals are visually dimmed
-- The "hootenanny" button transitions from shop to the next night
-- Keyboard navigation works in the shop: arrow keys, Enter to purchase, Tab between sections
-- Win condition triggers when the player calls it a night with 3+ blue-ribbon animals in the barn
-- Win condition does NOT trigger on bust
-- Win screen shows night count, final currencies, the winning blue-ribbon animals, and a "Play Again" button
-- "Play Again" resets to a fresh starter deck and Night 1
-- All Sprint 001 tests continue to pass — no regressions
-- New unit tests cover: stock generation, purchase logic, capacity upgrades, and win condition
-- Playwright smoke test covers a shop purchase round-trip and a win-condition path
-- Production bundle stays under 150 KB gzipped
+### Personality
+- [ ] Every animal (all 19) has a unique, flavorful description (1-2 sentences, "goofy, warm, scrappy" tone)
+- [ ] Every power has both a mechanical description and a personality-flavored quip
+- [ ] All hardcoded UI strings are replaced with imports from `copy.ts`
+- [ ] Night start, scoring, bust, shop, and win phases each display a randomized contextual quip
+- [ ] Targeting overlay headers are flavor-appropriate per ability type
+- [ ] Inspector panel shows personality description above mechanical description for animals
+- [ ] A non-developer reading the UI copy would describe the tone as "funny" or "charming"
+
+### Animation
+- [ ] Animals bounce into barn slots on invite (retro `steps()` easing)
+- [ ] Barn animals have subtle idle bob animation (staggered, not synchronized)
+- [ ] Bust triggers screen shake + red flash + animal fadeout
+- [ ] Unused activate abilities pulse when barn is at capacity
+- [ ] Ability activation produces a visual flash/glow on the slot
+- [ ] Night summary modal slides in; tally counts up (Pop then Cash); log lines stagger in
+- [ ] Phase transitions have choreographed exit/enter animations (~350ms each direction)
+- [ ] Shop cards stagger in on phase entry; blue ribbon cards enter with emphasis
+- [ ] Purchasing an animal produces a wiggle + counter pulse
+- [ ] Sold-out cards transition smoothly to dimmed/grayscale state
+- [ ] Win screen: blue ribbon animals reveal one at a time, confetti effect, title types in
+- [ ] All buttons have `:active` press feedback (scale 0.96)
+- [ ] All interactive elements have hover states (lift, glow, or cursor change)
+
+### Quality
+- [ ] Zero new JS dependencies added
+- [ ] All animations use CSS `@keyframes` except the scoring counter (rAF)
+- [ ] Animations respect `prefers-reduced-motion: reduce` (disable non-essential motion)
+- [ ] Existing E2E tests (`tests/shop-and-win.spec.ts`) still pass
+- [ ] Existing unit tests still pass
+- [ ] No layout shift from animations (all animated elements have explicit dimensions or `will-change`)
+- [ ] Bundle size increase < 5KB gzipped (copy + CSS, no new deps)
+
+---
 
 ## Risks
 
-### 1. Phase transition state bugs
+| Risk | Likelihood | Impact | Mitigation |
+|------|-----------|--------|------------|
+| **Animation timing conflicts with game logic** — setTimeout-based transitions could race with rapid user input | Medium | Medium | Disable user input during transition phases. `transitionPhase !== null` → all intents are no-ops. |
+| **`steps()` easing looks janky at non-integer pixel values** | Low | Low | Test at common viewport sizes. Use even pixel values for transform distances. |
+| **Tally counter feels sluggish on long nights** — high Pop/Cash values make counting take too long | Medium | Low | Cap counter duration at 2s regardless of value. Use non-linear easing (fast at start, slows near end). |
+| **Personality text reads as "trying too hard"** | Medium | Medium | Write first, then edit ruthlessly. Aim for *one* joke per description, not three. Let most descriptions be warm rather than funny. |
+| **Phase transition delays make gameplay feel slow** | Medium | High | Keep total transition time ≤ 700ms (350ms out + 350ms in). If playtesting feels sluggish, cut to 200ms each. Fast > smooth. |
+| **`prefers-reduced-motion` disabling too much** | Low | Low | Only disable decorative motion (bob, confetti, entrance stagger). Keep functional animations (tally counter, phase changes) but make them instant instead of animated. |
+| **Staggered animations cause re-render storms in Preact** | Low | Medium | All stagger is CSS-only via `animation-delay`. No JS re-renders per stagger step. |
 
-Moving between three phases (night, shop, night) with shared mutable state (`GameState`) is the most likely source of bugs. An animal purchased in the shop must appear in the farm's draw pile next night — not this night's leftover state. **Mitigation**: `startNextNight()` always builds a fresh `NightState` from the current `GameState.ownedAnimals`. Shop never touches `NightState`.
-
-### 2. Stock generation fairness
-
-Drawing 10 from 13 eligible regular animals means 3 types are excluded per visit. If the RNG is poorly seeded, the same animals could appear repeatedly across visits, making runs feel samey. **Mitigation**: use a proper shuffle (Fisher-Yates) seeded per shop visit. Accept that with 13-choose-10, variety is moderate — this is a design constraint, not a bug.
-
-### 3. Capacity upgrade economy balance
-
-The 2, 3, 4, 5, ... Cash pricing is an opinionated choice. If it's too cheap, the player expands the barn trivially and the push-your-luck tension disappears. If too expensive, the upgrade feels useless. **Mitigation**: this is a tuning knob. The formula is isolated in one function (`upgradePrice`) and easy to adjust after playtesting. Ship it and tune later.
-
-### 4. Win condition feels abrupt
-
-Buying 3 blue-ribbon animals at 40–60 Pop each requires significant saving. The game could feel like a long grind with a sudden ending. **Mitigation**: out of scope for this sprint — pacing is a game design concern addressed in playtesting. The win mechanic itself is simple and correct; the experience around it is polish.
-
-### 5. Shop UI complexity creep
-
-The shop has more interactive elements than the barn: 12 cards with hover states, an upgrade panel, an info panel, and a navigation button. It's tempting to over-build. **Mitigation**: use placeholder sprites (colored rectangles), keep the layout as a simple CSS grid, and resist adding transitions or animations beyond the specified 2-frame hover bob.
+---
 
 ## Dependencies
 
-- **Sprint 001 complete**: all night engine, barn UI, scoring, and existing test infrastructure must be working. This sprint builds directly on `types.ts`, `engine.ts`, `state.ts`, `selectors.ts`, and `App.tsx`.
-- **`OwnedAnimal` identity model**: Sprint 001's `instanceId` system is essential. Purchased animals must get new unique IDs.
-- **Scoring pipeline hook point**: the win check inserts after End-of-Night effects in `engine.ts`. The pipeline must be structured to allow this insertion cleanly.
-- **`NightSummaryModal` seam**: Sprint 001 must have a clear transition point where the shop phase plugs in. If the modal directly calls `startNextNight()`, that call needs to be replaceable with a phase transition.
-- **RNG**: stock generation needs a shuffle function. Use a simple Fisher-Yates on `Math.random()` — no need for a seedable PRNG unless replay/testing demands it (in which case, inject the RNG as a parameter).
-- **No new dependencies**: no new npm packages. Preact, Vite, Vitest, and Playwright from Sprint 001 are sufficient.
+### Internal
+- **Sprint 002 complete and stable.** All game phases, scoring, shop, and win mechanics must be working. (Confirmed: Sprint 002 is merged.)
+- **Existing E2E and unit tests passing** as a baseline before any changes.
+
+### External
+- **None.** No new packages, no sourced assets, no API calls. This is entirely creative work on top of the existing codebase.
+
+### Ordering Constraints
+- Phase 1 (animation infrastructure) must land before Phases 2-4 and 6.
+- Phase 5 (personality) is independent of Phases 1-4 and can be done in parallel or in any order.
+- Phase 6 (win screen + final polish) should come last as a consistency pass.

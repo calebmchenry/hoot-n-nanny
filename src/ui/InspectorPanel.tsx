@@ -1,5 +1,13 @@
+import { ANIMAL_COPY, POWER_COPY, UI_COPY, getNightStartQuip } from '../content/copy';
 import { getDefinition } from '../game/catalog';
-import { buildBarnSlots, findOwnedAnimal, getFarmWindowCounts, isAbilityUsed, isBarnAtCapacity } from '../game/selectors';
+import {
+  buildBarnSlots,
+  findOwnedAnimal,
+  getAvailableAbilitySources,
+  getFarmWindowCounts,
+  isAbilityUsed,
+  isBarnAtCapacity
+} from '../game/selectors';
 import type { AnimalId, GameState } from '../game/types';
 import { AnimalSprite } from './AnimalSprite';
 
@@ -22,13 +30,16 @@ export const InspectorPanel = ({
   const selectedSlot = slots[selectedSlotIndex] ?? slots[0];
 
   const canInvite = gameState.night.drawPileIds.length > 0 && !isBarnAtCapacity(gameState) && !gameState.night.targeting;
+  const atCapacityWithAbilities = isBarnAtCapacity(gameState) && getAvailableAbilitySources(gameState).length > 0;
+  const nightQuip = getNightStartQuip(gameState.nightNumber);
 
   if (selectedSlot.kind === 'window') {
     const counts = getFarmWindowCounts(gameState);
     return (
       <aside className="inspector" aria-label="Inspector">
         <h2>Farm Window</h2>
-        <p>Remaining guests by species:</p>
+        <p className="inspector-quip">{nightQuip}</p>
+        <p>{UI_COPY.windowHint}</p>
         <div className="window-counts">
           {Object.entries(counts)
             .filter(([, count]) => count > 0)
@@ -53,7 +64,9 @@ export const InspectorPanel = ({
     return (
       <aside className="inspector" aria-label="Inspector">
         <h2>Barn Door</h2>
-        <p>Invite the next guest from the farm.</p>
+        <p className="inspector-quip">{nightQuip}</p>
+        <p>{UI_COPY.doorHint}</p>
+        {atCapacityWithAbilities ? <p className="inspector-note">{UI_COPY.abilityReadyHint}</p> : null}
         <button type="button" onClick={onInvite} disabled={!canInvite} data-testid="invite-button">
           Invite Guest
         </button>
@@ -72,22 +85,29 @@ export const InspectorPanel = ({
     }
 
     const definition = getDefinition(resident.animalId);
+    const animalCopy = ANIMAL_COPY[resident.animalId];
+    const powerCopy = POWER_COPY[definition.power];
     const activatePower = definition.power === 'fetch' || definition.power === 'kick' || definition.power === 'peek';
     const used = isAbilityUsed(gameState, primaryId);
 
     return (
       <aside className="inspector" aria-label="Inspector">
         <h2>{definition.name}</h2>
-        <p>{definition.description}</p>
+        <p className="inspector-quip">{animalCopy.flavor}</p>
+        <p>{animalCopy.rules}</p>
+        <p>
+          Power: <strong>{powerCopy.label}</strong>
+        </p>
+        <p>{powerCopy.rules}</p>
         <p>
           Pop: {definition.power === 'encore' ? resident.encorePop : definition.currencies.pop} / Cash: {definition.currencies.cash}
         </p>
-        <p>Power: {definition.power}</p>
         {activatePower && !used ? (
           <button type="button" onClick={() => onUseAbility(primaryId)} data-testid="use-ability">
-            Use {definition.power}
+            Use {powerCopy.label}
           </button>
         ) : null}
+        {activatePower && used ? <p className="inspector-note">{UI_COPY.abilitySpentHint}</p> : null}
         <button type="button" onClick={onCallItANight} data-testid="call-night">
           Call It a Night
         </button>
@@ -98,7 +118,8 @@ export const InspectorPanel = ({
   return (
     <aside className="inspector" aria-label="Inspector">
       <h2>Inspector</h2>
-      <p>Select a slot in the barn.</p>
+      <p className="inspector-quip">{nightQuip}</p>
+      <p>{UI_COPY.inspectorIdle}</p>
       <button type="button" onClick={onCallItANight} data-testid="call-night">
         Call It a Night
       </button>

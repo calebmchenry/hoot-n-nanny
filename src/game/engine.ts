@@ -13,7 +13,7 @@ import {
   isBarnAtCapacity,
   occupiedBarnSlots
 } from './selectors';
-import type { AppIntent, GameState, NightOutcome, NightSummary, OwnedAnimal } from './types';
+import type { AppIntent, GameState, NightOutcome, NightSummary, OwnedAnimal, ResolutionEvent } from './types';
 
 const addAbilityUse = (gameState: GameState, sourceId: string): GameState => ({
   ...gameState,
@@ -62,8 +62,7 @@ const completeNightSummary = (
     ...gameState.night,
     calledItNight: summary.outcome !== 'bust-to-shop',
     pinnedForNextNight,
-    targeting: null,
-    resolutionLog: summary.resolutionLog
+    targeting: null
   },
   lastNightSummary: {
     ...summary,
@@ -73,14 +72,13 @@ const completeNightSummary = (
   }
 });
 
-const resolveBust = (gameState: GameState, title: string): GameState => {
+const resolveBust = (gameState: GameState): GameState => {
   const residentIds = gameState.night.barnResidentIds;
   const base = {
     ...gameState,
     night: {
       ...gameState.night,
-      bust: true,
-      resolutionLog: [title]
+      bust: true
     }
   };
 
@@ -90,8 +88,9 @@ const resolveBust = (gameState: GameState, title: string): GameState => {
       base,
       {
         outcome: 'bust-to-shop',
-        title,
-        resolutionLog: [title],
+        popBefore: base.pop,
+        cashBefore: base.cash,
+        events: [],
         winningBlueRibbonIds: []
       },
       base.pop,
@@ -141,11 +140,11 @@ const autoEndIfNeeded = (gameState: GameState): GameState => {
 const resolveBustChecks = (gameState: GameState): GameState => {
   const effectiveNoisyCount = getEffectiveNoisyCount(gameState);
   if (effectiveNoisyCount >= 3) {
-    return resolveBust(gameState, 'Bust: 3 effective Noisy animals woke up the farmer.');
+    return resolveBust(gameState);
   }
 
   if (occupiedBarnSlots(gameState) > gameState.barnCapacity) {
-    return resolveBust(gameState, 'Bust: the barn was over capacity from a forced invite.');
+    return resolveBust(gameState);
   }
 
   return gameState;
@@ -204,22 +203,35 @@ const inviteFromDrawPile = (
 const scoreNight = (gameState: GameState): GameState => {
   const residents = getBarnResidents(gameState);
 
-  let pop = gameState.pop;
-  let cash = gameState.cash;
-  const resolutionLog: string[] = [];
+  const popBefore = gameState.pop;
+  const cashBefore = gameState.cash;
+
+  let pop = popBefore;
+  let cash = cashBefore;
+  const events: ResolutionEvent[] = [];
 
   for (const resident of residents) {
     const definition = getDefinition(resident.animalId);
     const popGain = getPopYieldForResident(resident);
     pop += popGain;
-    resolutionLog.push(`${definition.name}: +${popGain} Pop`);
+    events.push({
+      kind: 'pop-gain',
+      amount: popGain,
+      source: definition.name,
+      description: `${definition.name}: +${popGain} Pop`
+    });
   }
 
   for (const resident of residents) {
     const definition = getDefinition(resident.animalId);
     const cashGain = definition.currencies.cash;
     cash += cashGain;
-    resolutionLog.push(`${definition.name}: +${cashGain} Cash`);
+    events.push({
+      kind: 'cash-gain',
+      amount: cashGain,
+      source: definition.name,
+      description: `${definition.name}: +${cashGain} Cash`
+    });
   }
 
   const upkeepAnimals = residents.filter((resident) => getDefinition(resident.animalId).power === 'upkeep');
@@ -227,10 +239,21 @@ const scoreNight = (gameState: GameState): GameState => {
     const definition = getDefinition(resident.animalId);
     if (cash > 0) {
       cash -= 1;
-      resolutionLog.push(`${definition.name}: paid 1 Cash upkeep.`);
+      events.push({
+        kind: 'cash-cost',
+        amount: 1,
+        source: definition.name,
+        description: `${definition.name}: paid 1 Cash upkeep.`
+      });
     } else {
+      const penalty = Math.min(5, pop);
       pop = Math.max(0, pop - 5);
-      resolutionLog.push(`${definition.name}: could not pay upkeep, lost 5 Pop.`);
+      events.push({
+        kind: 'pop-penalty',
+        amount: penalty,
+        source: definition.name,
+        description: `${definition.name}: could not pay upkeep, lost ${penalty} Pop.`
+      });
     }
   }
 
@@ -243,7 +266,12 @@ const scoreNight = (gameState: GameState): GameState => {
 
     const bonus = Math.max(0, flockResidents.length - 1);
     pop += bonus;
-    resolutionLog.push(`${definition.name}: Flock bonus +${bonus} Pop.`);
+    events.push({
+      kind: 'bonus',
+      amount: bonus,
+      source: definition.name,
+      description: `${definition.name}: Flock bonus +${bonus} Pop.`
+    });
   }
 
   const blueCount = blueRibbonBarnCount(gameState);
@@ -254,8 +282,9 @@ const scoreNight = (gameState: GameState): GameState => {
     gameState,
     {
       outcome,
-      title: outcome === 'score-to-win' ? 'Blue Ribbon Victory!' : 'Night Complete',
-      resolutionLog,
+      popBefore,
+      cashBefore,
+      events,
       winningBlueRibbonIds
     },
     pop,
@@ -286,13 +315,16 @@ const handleUseAbility = (gameState: GameState, sourceId: string): GameState => 
     }
 
     return autoEndIfNeeded(
-      addAbilityUse({
-        ...gameState,
-        night: {
-          ...gameState.night,
-          peekedNextId: gameState.night.drawPileIds[0]
-        }
-      }, sourceId)
+      addAbilityUse(
+        {
+          ...gameState,
+          night: {
+            ...gameState.night,
+            peekedNextId: gameState.night.drawPileIds[0]
+          }
+        },
+        sourceId
+      )
     );
   }
 
@@ -342,8 +374,9 @@ const handleSelectTarget = (gameState: GameState, targetId: string): GameState =
       },
       {
         outcome: 'bust-to-shop',
-        title: 'Farmer Woke Up!',
-        resolutionLog: gameState.night.resolutionLog,
+        popBefore: gameState.pop,
+        cashBefore: gameState.cash,
+        events: [],
         winningBlueRibbonIds: []
       },
       gameState.pop,

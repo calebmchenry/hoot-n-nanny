@@ -8,8 +8,7 @@ export const ANIMALS: Record<AnimalId, AnimalDefinition> = {
     currencies: { pop: 2, cash: 0 },
     power: 'noisy',
     powerType: 'passive',
-    blueRibbon: false,
-    description: 'Noisy: contributes toward busting at 3 effective Noisy.'
+    blueRibbon: false
   },
   bull: {
     id: 'bull',
@@ -18,8 +17,7 @@ export const ANIMALS: Record<AnimalId, AnimalDefinition> = {
     currencies: { pop: 2, cash: 0 },
     power: 'rowdy',
     powerType: 'immediate',
-    blueRibbon: false,
-    description: 'Rowdy: invites another guest immediately.'
+    blueRibbon: false
   },
   goose: {
     id: 'goose',
@@ -28,8 +26,7 @@ export const ANIMALS: Record<AnimalId, AnimalDefinition> = {
     currencies: { pop: 3, cash: 0 },
     power: 'noisy',
     powerType: 'passive',
-    blueRibbon: false,
-    description: 'Noisy: contributes toward busting at 3 effective Noisy.'
+    blueRibbon: false
   },
   chicken: {
     id: 'chicken',
@@ -38,8 +35,7 @@ export const ANIMALS: Record<AnimalId, AnimalDefinition> = {
     currencies: { pop: 1, cash: 0 },
     power: 'none',
     powerType: 'none',
-    blueRibbon: false,
-    description: 'No power.'
+    blueRibbon: false
   },
   pig: {
     id: 'pig',
@@ -48,8 +44,7 @@ export const ANIMALS: Record<AnimalId, AnimalDefinition> = {
     currencies: { pop: 0, cash: 1 },
     power: 'none',
     powerType: 'none',
-    blueRibbon: false,
-    description: 'No power.'
+    blueRibbon: false
   },
   cow: {
     id: 'cow',
@@ -58,8 +53,7 @@ export const ANIMALS: Record<AnimalId, AnimalDefinition> = {
     currencies: { pop: 3, cash: 0 },
     power: 'upkeep',
     powerType: 'end-of-night',
-    blueRibbon: false,
-    description: 'Upkeep: pay 1 Cash at scoring or lose 5 Pop.'
+    blueRibbon: false
   },
   mouse: {
     id: 'mouse',
@@ -68,8 +62,7 @@ export const ANIMALS: Record<AnimalId, AnimalDefinition> = {
     currencies: { pop: 0, cash: 1 },
     power: 'sneak',
     powerType: 'passive',
-    blueRibbon: false,
-    description: "Sneak: doesn't consume a barn slot."
+    blueRibbon: false
   },
   owl: {
     id: 'owl',
@@ -78,8 +71,7 @@ export const ANIMALS: Record<AnimalId, AnimalDefinition> = {
     currencies: { pop: 1, cash: 0 },
     power: 'peek',
     powerType: 'activate',
-    blueRibbon: false,
-    description: 'Peek: reveal the next animal in the farm.'
+    blueRibbon: false
   },
   'barn-cat': {
     id: 'barn-cat',
@@ -88,8 +80,7 @@ export const ANIMALS: Record<AnimalId, AnimalDefinition> = {
     currencies: { pop: 0, cash: 1 },
     power: 'calm',
     powerType: 'passive',
-    blueRibbon: false,
-    description: 'Calm: neutralizes one Noisy animal.'
+    blueRibbon: false
   },
   sheep: {
     id: 'sheep',
@@ -98,8 +89,7 @@ export const ANIMALS: Record<AnimalId, AnimalDefinition> = {
     currencies: { pop: 1, cash: 0 },
     power: 'flock',
     powerType: 'end-of-night',
-    blueRibbon: false,
-    description: 'Flock: gains bonus Pop for each other Flock in the barn.'
+    blueRibbon: false
   },
   swan: {
     id: 'swan',
@@ -108,8 +98,7 @@ export const ANIMALS: Record<AnimalId, AnimalDefinition> = {
     currencies: { pop: 0, cash: 0 },
     power: 'encore',
     powerType: 'passive',
-    blueRibbon: false,
-    description: 'Encore: gains +1 Pop each time it enters the barn.'
+    blueRibbon: false
   },
   bunny: {
     id: 'bunny',
@@ -118,8 +107,7 @@ export const ANIMALS: Record<AnimalId, AnimalDefinition> = {
     currencies: { pop: 1, cash: 0 },
     power: 'stacks',
     powerType: 'passive',
-    blueRibbon: false,
-    description: 'Stacks: duplicates share one slot.'
+    blueRibbon: false
   },
   'border-collie': {
     id: 'border-collie',
@@ -128,8 +116,7 @@ export const ANIMALS: Record<AnimalId, AnimalDefinition> = {
     currencies: { pop: 1, cash: 0 },
     power: 'fetch',
     powerType: 'activate',
-    blueRibbon: false,
-    description: 'Fetch: pick an animal from the farm to invite.'
+    blueRibbon: false
   },
   donkey: {
     id: 'donkey',
@@ -138,8 +125,7 @@ export const ANIMALS: Record<AnimalId, AnimalDefinition> = {
     currencies: { pop: 2, cash: 0 },
     power: 'kick',
     powerType: 'activate',
-    blueRibbon: false,
-    description: 'Kick: remove an animal from the barn.'
+    blueRibbon: false
   },
   chimera: {
     id: 'chimera',
@@ -148,8 +134,7 @@ export const ANIMALS: Record<AnimalId, AnimalDefinition> = {
     currencies: { pop: 0, cash: 0 },
     power: 'none',
     powerType: 'none',
-    blueRibbon: true,
-    description: 'Blue ribbon guest with no power.'
+    blueRibbon: true
   },
   jackalope: {
     id: 'jackalope',
@@ -158,8 +143,7 @@ export const ANIMALS: Record<AnimalId, AnimalDefinition> = {
     currencies: { pop: 2, cash: 0 },
     power: 'stacks',
     powerType: 'passive',
-    blueRibbon: true,
-    description: 'Stacks: duplicates share one slot.'
+    blueRibbon: true
   },
   unicorn: {
     id: 'unicorn',
@@ -168,8 +152,7 @@ export const ANIMALS: Record<AnimalId, AnimalDefinition> = {
     currencies: { pop: 0, cash: 0 },
     power: 'calm',
     powerType: 'passive',
-    blueRibbon: true,
-    description: 'Calm: neutralizes one Noisy animal.'
+    blueRibbon: true
   },
   griffin: {
     id: 'griffin',
@@ -178,8 +161,7 @@ export const ANIMALS: Record<AnimalId, AnimalDefinition> = {
     currencies: { pop: 1, cash: 0 },
     power: 'fetch',
     powerType: 'activate',
-    blueRibbon: true,
-    description: 'Fetch: pick an animal from the farm to invite.'
+    blueRibbon: true
   },
   dragon: {
     id: 'dragon',
@@ -188,8 +170,7 @@ export const ANIMALS: Record<AnimalId, AnimalDefinition> = {
     currencies: { pop: 2, cash: 0 },
     power: 'kick',
     powerType: 'activate',
-    blueRibbon: true,
-    description: 'Kick: remove an animal from the barn.'
+    blueRibbon: true
   }
 };
 

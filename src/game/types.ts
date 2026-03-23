@@ -1,18 +1,21 @@
 export type GamePhase = 'night' | 'night-summary' | 'shop' | 'win';
 
-export type AnimalPowerId =
-  | 'none'
-  | 'noisy'
-  | 'stacks'
-  | 'calm'
-  | 'fetch'
-  | 'kick'
-  | 'peek'
-  | 'flock'
-  | 'sneak'
-  | 'encore'
-  | 'rowdy'
-  | 'upkeep';
+export const ANIMAL_POWER_IDS = [
+  'none',
+  'noisy',
+  'stacks',
+  'calm',
+  'fetch',
+  'kick',
+  'peek',
+  'flock',
+  'sneak',
+  'encore',
+  'rowdy',
+  'upkeep'
+] as const;
+
+export type AnimalPowerId = (typeof ANIMAL_POWER_IDS)[number];
 
 export type PowerType = 'passive' | 'immediate' | 'activate' | 'end-of-night' | 'none';
 
@@ -50,7 +53,6 @@ export interface AnimalDefinition {
   power: AnimalPowerId;
   powerType: PowerType;
   blueRibbon: boolean;
-  description: string;
 }
 
 export interface OwnedAnimal {
@@ -59,9 +61,13 @@ export interface OwnedAnimal {
   encorePop: number;
 }
 
-export type NightOutcome = 'bust-to-shop' | 'score-to-shop' | 'score-to-win';
+export const NIGHT_OUTCOMES = ['bust-to-shop', 'score-to-shop', 'score-to-win'] as const;
 
-export type TargetingKind = 'fetch' | 'kick' | 'pin';
+export type NightOutcome = (typeof NIGHT_OUTCOMES)[number];
+
+export const TARGETING_KINDS = ['fetch', 'kick', 'pin'] as const;
+
+export type TargetingKind = (typeof TARGETING_KINDS)[number];
 
 export interface TargetingState {
   kind: TargetingKind;
@@ -75,18 +81,27 @@ export interface NightState {
   peekedNextId: string | null;
   bust: boolean;
   pinnedForNextNight: string | null;
-  resolutionLog: string[];
   targeting: TargetingState | null;
   calledItNight: boolean;
   autoEnded: boolean;
 }
 
+export type ResolutionEventKind = 'pop-gain' | 'cash-gain' | 'cash-cost' | 'pop-penalty' | 'bonus';
+
+export interface ResolutionEvent {
+  kind: ResolutionEventKind;
+  amount: number;
+  source: string;
+  description: string;
+}
+
 export interface NightSummary {
   outcome: NightOutcome;
-  title: string;
-  resolutionLog: string[];
+  popBefore: number;
   popAfter: number;
+  cashBefore: number;
   cashAfter: number;
+  events: ResolutionEvent[];
   pinnedForNextNight: string | null;
   winningBlueRibbonIds: string[];
 }

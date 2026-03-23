@@ -141,7 +141,7 @@ digraph ImplementGameLoop {
     commit [
         shape=parallelogram,
         label="Commit Sprint",
-        tool_command="cd /Users/caleb.mchenry/code/me/hoot-n-nanny && SPRINT=$(ls docs/sprints/SPRINT-*.md | sort -V | tail -1 | sed 's/.*SPRINT-//;s/.md//') && git add -A && git commit -m \"feat: implement Sprint ${SPRINT}\""
+        tool_command="cd /Users/caleb.mchenry/code/me/hoot-n-nanny && SPRINT=$(ls docs/sprints/SPRINT-*.md | sort -V | tail -1 | sed 's/.*SPRINT-//;s/.md//') && echo feat: implement Sprint $SPRINT > /tmp/.nectar-commit-msg && git add -A && git commit -F /tmp/.nectar-commit-msg && rm -f /tmp/.nectar-commit-msg"
     ]
 
     // ── Edges ────────────────────────────────────────────────────────

@@ -3,7 +3,7 @@ PASS
 # Visual Look & Feel Validation Report
 
 Validated against: `docs/GAME_DESIGN.md` (Visuals sections) and `docs/INTENT.md` (Tone, Art & Audio Sources, Quality Bar).
-Screenshots taken via Playwright on 2026-03-23.
+Screenshots taken via Playwright on 2026-03-23. Re-validated 2026-03-23 against fresh-start branch.
 
 ---
 
