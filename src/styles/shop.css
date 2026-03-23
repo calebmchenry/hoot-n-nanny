@@ -1,0 +1,206 @@
+.trading-post {
+  background:
+    linear-gradient(180deg, rgba(250, 238, 209, 0.98) 0%, rgba(238, 215, 173, 0.98) 100%);
+  border: 4px solid #4a2d18;
+  box-shadow: 4px 4px 0 #29160b;
+  padding: 1rem;
+  display: grid;
+  gap: 0.95rem;
+  outline: none;
+}
+
+.shop-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  align-items: center;
+}
+
+.shop-header h1 {
+  margin: 0;
+  margin-right: 0.5rem;
+  font-size: 1.45rem;
+  text-transform: uppercase;
+}
+
+.shop-header p {
+  margin: 0;
+  border: 2px solid #3c2413;
+  background: linear-gradient(180deg, #fff8e7 0%, #f0debd 100%);
+  box-shadow: 2px 2px 0 #4d311c;
+  padding: 0.28rem 0.52rem;
+  font-weight: 700;
+}
+
+.shop-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+
+.shop-card,
+.upgrade-card,
+.hootenanny-button {
+  border: 2px solid #422814;
+  background: linear-gradient(180deg, #fffdf7 0%, #f3e2c3 100%);
+  box-shadow: 2px 2px 0 #4f311b;
+  padding: 0.52rem;
+  text-align: left;
+  color: inherit;
+}
+
+.shop-card {
+  display: grid;
+  gap: 0.22rem;
+  align-content: start;
+}
+
+.shop-card h3,
+.upgrade-card h3 {
+  margin: 0.15rem 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.shop-card p,
+.upgrade-card p,
+.shop-inspector p {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.3;
+}
+
+.shop-card.focused,
+.upgrade-card.focused,
+.hootenanny-button.focused {
+  outline: 3px solid #d0702a;
+  outline-offset: 1px;
+}
+
+.shop-card.blue-ribbon {
+  border-color: #2f7e58;
+  background:
+    linear-gradient(135deg, rgba(47, 126, 88, 0.14) 0%, rgba(47, 126, 88, 0) 36%),
+    linear-gradient(180deg, #fffdf7 0%, #e7f3ec 100%);
+}
+
+.shop-card.blue-ribbon::after {
+  content: '';
+  justify-self: end;
+  width: 0;
+  height: 0;
+  border-top: 0.9rem solid #2f7e58;
+  border-left: 0.9rem solid transparent;
+  margin-top: -0.52rem;
+  margin-right: -0.52rem;
+}
+
+.shop-card.dimmed,
+.upgrade-card.dimmed {
+  opacity: 0.46;
+  box-shadow: none;
+}
+
+.shop-sprite {
+  width: 2.7rem;
+  height: 2.7rem;
+}
+
+.shop-sprite .animal-sprite {
+  width: 100%;
+  height: 100%;
+}
+
+.blue-ribbon-chip {
+  display: inline-block;
+  width: fit-content;
+  border: 1px solid #1f5a3f;
+  background: #def3e7;
+  color: #174632;
+  padding: 0.05rem 0.28rem;
+  font-size: 0.62rem;
+}
+
+.shop-card.focused .shop-sprite,
+.shop-card:hover .shop-sprite {
+  animation: walk-bob 280ms steps(2, end) infinite;
+}
+
+@keyframes walk-bob {
+  0% {
+    transform: translateY(0px);
+  }
+
+  100% {
+    transform: translateY(-2px);
+  }
+}
+
+.shop-lower-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+
+.hootenanny-button {
+  align-self: stretch;
+  font-weight: 700;
+  text-align: center;
+  display: grid;
+  place-items: center;
+}
+
+.shop-inspector {
+  border: 2px solid #4d311b;
+  background: linear-gradient(180deg, #fff8ea 0%, #f0dfbe 100%);
+  box-shadow: 2px 2px 0 #4f311b;
+  padding: 0.7rem;
+}
+
+.shop-inspector h3 {
+  margin: 0 0 0.35rem 0;
+  text-transform: uppercase;
+  font-size: 0.98rem;
+}
+
+.chip {
+  display: inline-block;
+  width: fit-content;
+  border: 1px solid #7d2f1f;
+  padding: 0.1rem 0.42rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  background: #ffd9cf;
+}
+
+.power-badge {
+  display: inline-block;
+  min-width: 1.2rem;
+  text-align: center;
+  border: 1px solid #5d4228;
+  background: #f9ecd0;
+  font-weight: 700;
+}
+
+@media (max-width: 980px) {
+  .shop-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .shop-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .shop-lower-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 520px) {
+  .shop-grid {
+    grid-template-columns: 1fr;
+  }
+}
