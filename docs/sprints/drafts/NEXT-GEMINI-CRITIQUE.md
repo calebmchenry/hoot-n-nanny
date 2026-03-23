@@ -1,79 +1,65 @@
-# Critique of Sprint 004 Drafts
+# Critique: Sprint 005 "Ship It" Drafts
 
-This document provides a comparative critique of the two proposed drafts for Sprint 004 (Sound of the Barn), analyzing their strengths, weaknesses, risk assessments, edge cases, and Definition of Done (DoD) completeness. It concludes with recommendations for a final merged sprint plan.
+This document synthesizes a critique of the two proposed drafts for Sprint 005: `NEXT-CLAUDE-DRAFT.md` and `NEXT-CODEX-DRAFT.md`. 
 
-## 1. Claude Draft (Procedural Audio)
+## 1. NEXT-CLAUDE-DRAFT.md
 
 ### Strengths
-* **Zero Asset Footprint:** Relying entirely on the Web Audio API for procedural generation means no `.mp3`, `.wav`, or `.ogg` files to download, keeping the bundle size virtually unchanged and avoiding network latency issues.
-* **Detailed Audio Architecture:** The separation of the `AudioEngine` (singleton), `sounds.ts` (pure Web Audio generators), and `hooks.ts` (`useGameAudio`) is highly robust and idiomatic for a React/Preact application.
-* **Browser Autoplay Handling:** The lazy `AudioContext` instantiation strategy on the first user gesture is well thought out and avoids intrusive UI modals.
-* **Granular Control:** Procedural audio allows for dynamic runtime modifications (e.g., slight pitch variations on rapid triggers) easily without needing multiple asset variations.
+*   **Comprehensive QA Structure:** The breakdown into five QA dimensions (Gameplay paths, Responsive layout, Input parity, Performance, Cross-browser) is exceptionally detailed and provides a clear, actionable roadmap for manual testing.
+*   **404 Fallback Strategy:** Correctly identifies the GitHub Pages quirk where deep links or query parameters might result in a 404, and proposes a `public/404.html` redirect to preserve state like `?seed=...`.
+*   **Specific Edge Cases Covered:** The gameplay checklist is exhaustive, explicitly testing nuanced mechanics like Upkeep with 0 cash, Rowdy capacity overflows, and Sneak capacity logic.
+*   **Environment-Aware Base Path:** Uses an environment variable for the Vite base path, ensuring local development remains untouched while the CI build targets the correct subdirectory.
 
 ### Weaknesses
-* **High Implementation Risk for SFX:** Procedurally generating 19 distinct, instantly recognizable animal sounds (plus music) using raw oscillators is an incredibly specialized skill. It is highly probable that the sounds will be generic "beeps" and "boops" rather than thematic, polished audio.
-* **Time Sink:** Tuning envelopes, filters, and oscillators manually in code to sound "good" is notoriously time-consuming and often leads to an endless tweaking loop.
-* **Throwaway Work:** Suggests building a "dev-only sound palette page," which adds scope not strictly necessary for shipping the feature.
+*   **Coupled Asset Paths:** Hardcoding `/hoot-n-nanny/` in the Vite config via the environment variable couples the build to the repository name. If the repo is renamed or forked, the deployment will break silently.
+*   **Workflow Duplication:** Splitting into two jobs (`test` and `deploy`) with duplicate `npm ci && npm run build` steps wastes CI minutes and creates two separate build artifacts, rather than verifying and deploying the *exact same* artifact.
 
 ### Gaps in Risk Analysis
-* The risk of "Procedural music sounds bad" is identified, but the mitigation ("fall back to simpler ambient textures") doesn't solve the core problem if the result still feels incongruous with the game's high visual polish. It also underestimates the difficulty of the 19 animal sounds.
-* Doesn't fully address what happens if the device physically cannot output audio or if the Web Audio API is partially implemented/buggy on certain older browsers (though it mentions Safari inconsistencies).
-
-### Missing Edge Cases
-* Voice stealing / Polyphony limits: It mentions gating against >5 simultaneous sounds, but doesn't detail the drop strategy (e.g., drop oldest, drop quietest, prevent new).
-* `AudioContext` suspension: Only mentions iOS tab switching, but OS-level interruptions (phone calls, alarms) can also suspend the context and require robust resume handling.
+*   **Asset Path Leaks:** Does not acknowledge the risk of accidentally introducing absolute paths (e.g., `/assets/...`) in CSS or JS, which would break on GitHub Pages even if the Vite base is set correctly.
+*   **Silent Failures in CI:** Fails to account for the risk that the deployed artifact might be fundamentally broken despite a green CI run, relying entirely on manual QA to catch base path issues.
 
 ### Definition of Done Completeness
-* **Excellent.** The DoD is comprehensive, split logically by Music, SFX, Controls, Browser Compliance, and Regression.
+*   Very strong on manual verification and gameplay states.
+*   Lacks automated enforcement of build artifact integrity prior to deployment.
 
 ---
 
-## 2. Codex Draft (Asset-Based Audio)
+## 2. NEXT-CODEX-DRAFT.md
 
 ### Strengths
-* **Guaranteed Audio Quality:** Using pre-rendered assets (`.wav`, `.mp3`, `.ogg`) ensures the final product sounds exactly as intended, matching the visual polish.
-* **Predictable Delivery:** Removes the massive technical risk of trying to synthesize complex sounds (like a rooster crow or an acoustic guitar) in JavaScript.
-* **Clean State Separation:** The introduction of `deriveCues.ts` to cleanly diff the `GameState` and emit semantic cues without muddying the reducer is a superb architectural decision.
-* **Pragmatic Budgeting:** Establishing a hard 2MB compressed payload budget is a smart constraint to prevent asset bloat.
+*   **Relocatable Artifacts:** Proposes `base: './'` in Vite. This is the superior architectural choice for an SPA without client-side routing. It makes the build immune to repository renames and sub-path deployment quirks.
+*   **Automated Artifact Verification:** Introduces `scripts/check-pages-artifact.mjs` as a hard deployment gate. Statically analyzing the build for absolute paths is an excellent defensive engineering practice.
+*   **Automated QA Expansion:** Actively extends the Playwright test suite with a new `?seed=bust` deterministic state to automate the failure/pinning paths, reducing reliance on manual QA.
+*   **Single Workflow Pipeline:** Consolidates verification and deployment into a streamlined workflow, ensuring the exact artifact tested is the one deployed.
 
 ### Weaknesses
-* **Sourcing Bottleneck:** The draft assumes the existence of the audio assets (`src/assets/audio/**/*`). Finding, editing, mastering, and licensing these assets is a significant hidden effort not accounted for in the phases.
-* **Dual Format Complexity:** Shipping both `.mp3` and `.ogg` for music adds to the payload and build complexity. Modern browsers (including Safari 15+) broadly support AAC or MP3 well enough that a single format might suffice for a casual game.
-* **Network Latency:** Assets must be downloaded. The draft doesn't address preload strategies or what happens if a sound is triggered before it has finished downloading.
+*   **Incomplete QA Checklist:** The manual QA checklist is too brief. It lacks the rigorous, scenario-specific depth provided in the Claude draft (e.g., checking specific power combinations).
+*   **Missing 404 Handling:** Fails to address how GitHub Pages handles 404s. Without a fallback, users refreshing the page with a `?seed=` query parameter will hit a hard GitHub Pages error screen.
 
 ### Gaps in Risk Analysis
-* **Asset Sourcing:** Fails to identify the time and effort required to source and edit the sound effects and music tracks as a risk.
-* **Network Failures:** No risk identified for slow networks where audio assets might stall or fail to load entirely, potentially causing unhandled promise rejections or silent failures during gameplay.
-
-### Missing Edge Cases
-* **Loading States:** What happens if the user clicks a button, but the `ui-confirm.wav` hasn't loaded yet? Is the action delayed, or does it happen silently?
-* **Rapid Polyphony:** While it mentions a "Polyphony cap: 6", it doesn't specify how the `HTMLAudioElement` or Web Audio buffer source handles rapid re-triggering of the *same* asset (e.g., clicking 5 times fast).
+*   **Performance Degradation:** Does not explicitly call out or test for memory leaks over sustained sessions, which is critical for a browser game.
+*   **Browser-Specific Audio Quirks:** Mentions mobile audio differences but lacks a concrete plan (like Claude's specific Safari/iOS audio resume checks) to validate them.
 
 ### Definition of Done Completeness
-* **Good, but less detailed.** It covers the core requirements and constraints but is less granular than Claude's DoD regarding specific edge cases (like the `prefers-reduced-motion` check).
+*   Strong on automated guardrails and CI/CD integrity.
+*   Weaker on defining the exact standards for visual and gameplay polish required to ship.
 
 ---
 
-## 3. Recommendations for the Final Merged Sprint
+## Missing Edge Cases Across Both Drafts
+*   **GitHub Actions Concurrency:** Neither draft explicitly mandates concurrency controls (`concurrency: group: "pages", cancel-in-progress: false`) in the GitHub Actions workflow. Without this, rapid pushes to `main` could cause race conditions during the deployment step, leading to broken Pages builds.
+*   **Caching Strategy:** Neither draft explicitly defines the caching headers or cache-busting strategy for GitHub Pages. While Vite handles asset hashing, the root `index.html` might be aggressively cached by browsers, preventing players from seeing updates.
 
-The final sprint should combine the architectural purity of Codex's state handling with a hybrid approach to audio generation to balance payload size and audio quality.
+---
 
-1. **Hybrid Audio Sourcing:**
-   * **Assets for Complex Sounds:** Use audio files (`.mp3`/`.webm`) for music loops, the bust sequence, the win fanfare, and the 19 animal entries. These are too complex to synthesize well in JS.
-   * **Procedural for UI/Simple SFX:** Synthesize simple UI clicks, hovers, and basic jingles using the Web Audio API (Claude's approach). This saves network requests and payload size for high-frequency sounds that only need to be simple "ticks" or "pops".
+## Recommendations for the Final Merged Sprint
 
-2. **Architecture:**
-   * Adopt **Codex's `deriveCues.ts`** pattern. It is the cleanest way to map pure state transitions to side-effectful audio cues without polluting the reducer or React components.
-   * Adopt **Claude's lazy `AudioContext` and gain node routing** as the core of the `AudioDirector`. Even for playing assets, routing them through a Web Audio `GainNode` is superior to managing multiple `HTMLAudioElement` volumes.
+The final Sprint 005 plan should combine the defensive CI/CD architecture of the Codex draft with the rigorous manual QA and edge-case handling of the Claude draft.
 
-3. **Asset Management & Preloading:**
-   * Implement the 2MB asset budget.
-   * Add a specific phase or task for *Asset Sourcing & Mastering*.
-   * Ensure the `AudioDirector` has a robust decoding strategy: load the asset via `fetch`, decode via `AudioContext.decodeAudioData`, and cache the buffer. If it's not cached when requested, fail silently rather than blocking the game.
-
-4. **Polyphony and Ducking:**
-   * Explicitly define the voice-stealing algorithm (e.g., oldest-voice-drops).
-   * Implement Codex's ducking rules (e.g., bust cue ducks background music to 0.12).
-
-5. **Controls:**
-   * Use the shared UI controls approach (persistent top-right overlay). Persisting to `localStorage` (Claude's idea) is low-effort and high-value for user experience, so it should be included despite Codex's restriction.
+1.  **Adopt Relocatable Builds:** Use Codex's `base: './'` in `vite.config.ts`. It is strictly superior to hardcoding the repo name for a static game.
+2.  **Enforce Artifact Integrity:** Implement Codex's `check-pages-artifact.mjs` script to statically analyze `dist/` for absolute path leaks before deployment.
+3.  **Include 404 Routing:** Implement Claude's `public/404.html` redirect mechanism to ensure `?seed=` parameters survive page reloads and direct links.
+4.  **Single, Concurrent Workflow:** Use a single `.github/workflows/deploy.yml` with separate `test` and `deploy` jobs passing the *same* artifact, and strictly enforce deployment concurrency.
+5.  **Expand Automated States:** Add Codex's `?seed=bust` to the application state and write the corresponding Playwright tests.
+6.  **Execute the Exhaustive QA Sweep:** Use Claude's five-dimension QA checklist (Gameplay, Responsive, Input, Performance, Cross-browser) as the definitive manual QA pass against the live `github.io` URL.
+7.  **Performance Auditing:** Mandate a Lighthouse run (Performance ≥ 90) and a 10+ night memory leak check as part of the final ship criteria.

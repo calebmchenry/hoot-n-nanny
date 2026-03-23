@@ -1,71 +1,53 @@
-# Sprint 004 — "Sound of the Barn"
+# Sprint 005 Draft — "Ship It"
 
 ## Overview
-This sprint implements the entire audio layer of Hoot N' Nanny, covering all remaining medium-priority backlog items (15–23). By tackling all audio at once, we ensure a cohesive "retro + country" sonic identity, establish a single unified audio architecture, and balance the mix holistically. This is the final content-focused sprint before we move into shipping infrastructure and final QA.
+This sprint addresses the final two backlog items (26: GitHub Pages CI/CD, and 27: Final QA & Ship Polish). The goal is to cross the finish line, taking Hoot N' Nanny from a functional local build to a polished, publicly playable game. This means automated deployments, a performance and bundle audit, and rigorous end-to-end playtesting to ensure the game "feels finished to a stranger" on both desktop and mobile viewports.
 
-## Architecture & Technical Direction
-**Opinionated Stack:** To adhere to the strict "lightweight frontend stack" and "reasonable bundle budget" constraints outlined in the Project Intent, **we will use procedural audio generation instead of importing bulky MP3/WAV files.** 
-- We will use [ZzFX](https://github.com/KilledByAPixel/ZzFX) for all Sound Effects (SFX). It's a tiny (~1KB) micro audio synthesizer perfect for retro/chiptune sounds.
-- We will use [ZzFXM](https://github.com/keithclark/ZzFXM) for the music tracks. It allows us to sequence chiptune music in code, keeping the bundle size microscopically small while perfectly hitting the required "chiptune hoedown" aesthetic.
-
-**Core Audio Engine (`src/audio/engine.ts`):** 
-A singleton or context-provided audio manager that wraps ZzFX/ZzFXM. It will handle:
-- Global mute state and volume control.
-- Crossfading/switching between the Barn Party and Shop music tracks.
-- Playing transient SFX with slight pitch variations (especially for animal entries) to prevent auditory fatigue.
-- Handling browser autoplay policies (waiting for the first user interaction before initializing the `AudioContext`).
+## Architecture
+- **Infrastructure:** A single GitHub Actions workflow (`.github/workflows/deploy.yml`) will handle building the Vite app and deploying the `dist` directory to GitHub Pages.
+- **Frontend Configuration:** The Vite configuration must be updated to ensure the `base` path matches the repository name, preventing 404 errors for assets on the live site.
+- **Performance Tooling:** We will integrate the existing `scripts/check-bundle-budget.mjs` directly into the CI pipeline to fail the build if the bundle size exceeds the acceptable threshold for a fast-loading browser game.
 
 ## Implementation Phases
 
-### Phase 1: Audio Engine & Asset Definition
-1. Integrate ZzFX and ZzFXM into the project.
-2. Create `src/audio/engine.ts` to manage the `AudioContext`, track playing state, and expose `playSfx(id)` and `playMusic(trackId)` functions.
-3. Create `src/audio/assets.ts` to define the ZzFX sound parameter arrays (the "instruments" and SFX) and the ZzFXM song arrays. 
-   - *Drafting the actual arrays will require some trial and error in the ZzFX tracker during implementation to hit the "country/chiptune" vibe.*
+### Phase 1: CI/CD Pipeline
+1. Add `.github/workflows/deploy.yml` utilizing `actions/configure-pages`, `actions/upload-pages-artifact`, and `actions/deploy-pages`.
+2. Modify `vite.config.ts` to include a dynamic `base` path depending on the environment (e.g., `process.env.GITHUB_REPOSITORY`).
+3. Add `npm run build` and `npm run preview` tests to the pipeline.
 
-### Phase 2: System SFX Integration
-Wire up the non-gameplay UI sounds.
-- **Item 23 (UI Navigation):** Add soft clicks to `useControls.ts` (keyboard) and UI button `onClick`/`onPointerEnter` handlers.
-- **Item 20 (Purchase):** Trigger a coin clink/cha-ching in `ShopCard.tsx` or the shop action handler.
-- **Volume UI:** Add a mute toggle button to the `StatusBar.tsx`.
+### Phase 2: Performance & Bundle Audit
+1. Wire `scripts/check-bundle-budget.mjs` into the `build` script in `package.json`.
+2. Review the built output for excessively large assets (e.g., audio files, sprite sheets).
+3. If necessary, compress audio to WebM/Ogg or implement lazy loading to ensure the initial load remains snappy.
 
-### Phase 3: Gameplay SFX Integration
-Wire up sounds tied to the game loop and state changes.
-- **Item 17 (Animal Entry):** Trigger unique short blips when an animal is added to the barn grid.
-- **Item 21 (Activate Ability):** Trigger a chime when an active ability is used.
-- **Item 18 (Bust):** Trigger a dissonant scratch + rooster crow sequence when the bust state is derived.
-- **Item 19 (Scoring Jingle):** Trigger a celebratory flourish during the scoring phase sequence.
-- **Item 22 (Win Fanfare):** Trigger a major breakdown tune when the WinScreen mounts.
+### Phase 3: QA & Playtest Fixes
+1. **Full Playthroughs:** Conduct complete runs targeting the win condition (3 blue ribbons) and forced bust conditions to ensure state resets correctly without refreshing the page.
+2. **Mobile Validation:** Test touch targets (Shop and Barn grid) on emulated and real mobile devices. Ensure hover states don't break touch interactions.
+3. **Audio Context Unlocking:** Implement a "Click to Start" or "Enter Barn" overlay if mobile browsers block autoplaying audio.
 
-### Phase 4: Music Tracks
-- **Item 15 & 16 (Barn Party & Shop Tracks):** Wire up the phase transition logic (likely in `App.tsx` or `PhaseTransitionCurtain.tsx`) to switch the active ZzFXM loop based on the current game phase.
+### Phase 4: Polish & "Juice"
+1. Verify animations (entry, bust, win) are smooth. Optimize CSS by moving from `top`/`left` transitions to hardware-accelerated `transform` and `opacity` where needed.
+2. Ensure UI copy is clear to a new player without external instructions (e.g., visible tooltips or persistent helper text).
 
 ## Files Summary
-- **`src/audio/engine.ts`** (New): Core Web Audio API manager.
-- **`src/audio/assets.ts`** (New): ZzFX/ZzFXM definitions for all sounds.
-- **`src/audio/zzfx.ts` / `zzfxm.ts`** (New): The micro-libraries themselves (or added via npm if preferred, though raw files are often smaller).
-- **`src/ui/StatusBar.tsx`** (Update): Add mute/volume controls.
-- **`src/app/App.tsx`** (Update): Handle music track switching based on phase.
-- **`src/game/engine.ts` & Various UI Components** (Update): Dispatch SFX calls on state changes/interactions.
+- **New:** `.github/workflows/deploy.yml` (Deployment pipeline)
+- **Modified:** `vite.config.ts` (Base path config)
+- **Modified:** `package.json` (Scripts update for bundle checks)
+- **Modified:** `src/app/App.tsx` or similar (Potential "Click to Start" overlay for audio context)
+- **Modified:** Various `.css` files (Mobile responsiveness tweaks, touch-target sizing)
 
 ## Definition of Done
-- [ ] An upbeat chiptune hoedown loop plays during the Hootenanny phase.
-- [ ] A relaxed country/chiptune loop plays during the Shop phase.
-- [ ] Unique entry sounds play for different animal types.
-- [ ] Busting triggers a distinct audio sequence (scratch + crow).
-- [ ] Scoring triggers a celebratory jingle.
-- [ ] Purchasing in the shop triggers a cash/clink sound.
-- [ ] Activating abilities triggers a subtle chime.
-- [ ] Winning triggers a major fanfare.
-- [ ] UI navigation (hover, click) has soft audio feedback.
-- [ ] A mute button exists and successfully silences all audio.
-- [ ] Audio system respects browser autoplay policies (no errors on initial load before interaction).
-- [ ] Bundle size impact is minimal (ideally < 15KB total for all audio).
+- Pushing to the `main` branch automatically and successfully deploys the latest build to GitHub Pages.
+- The CI pipeline runs `check-bundle-budget.mjs` and passes.
+- A player can complete a full game loop (Hootenanny -> Shop -> Win/Bust) on both desktop and a mobile viewport without console errors or layout breaks.
+- Audio plays correctly on mobile after an initial user interaction.
+- The game requires zero external instructions to understand how to play.
 
 ## Risks
-- **Autoplay Policies:** Browsers aggressively block audio until the user interacts with the page. We must ensure the audio engine gracefully waits for the first click/keypress before attempting to play the music or SFX.
-- **Mixing/Levels:** Procedural audio can be piercing. We need to carefully tune the volume of SFX relative to the music to avoid listener fatigue.
-- **Aesthetic Alignment:** Generating "country" sounding music purely via a chiptune tracker (ZzFXM) requires some musical sequencing skill. If it proves too difficult to get right quickly, we may need to pivot back to highly compressed, externally produced OGG files as a fallback.
+- **Mobile Audio Restrictions:** Modern browsers require user interaction to unlock the AudioContext. If not handled cleanly, the game will be silent on mobile.
+- **Asset Paths on GitHub Pages:** Incorrect relative paths in Vite can cause sprites or audio to 404 in production.
+- **Touch Targets:** The barn grid might feel too cramped on smaller screens, leading to accidental clicks.
 
 ## Dependencies
-- All visual and mechanical implementations from Sprint 001-003 must be stable. Audio integration touches almost every file, so a stable foundation is required to avoid merge conflicts or wiring sounds to changing logic.
+- The GitHub repository must have GitHub Pages enabled and configured to build from GitHub Actions.
+- All core gameplay features (Sprints 001-004) must be fully complete and merged to `main`.

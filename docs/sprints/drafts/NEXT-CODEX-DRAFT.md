@@ -1,352 +1,275 @@
-# Sprint 004: Sound of the Barn
+# Sprint 005 Draft: Ship It
 
 ## Overview
 
-Sprint 003 finished the feel of the game. Sprint 004 finishes its sound. This sprint implements every remaining medium-priority backlog item in one pass so the audio system, the cue set, and the final mix are tuned together instead of being bolted on piecemeal later.
+This sprint covers backlog items **#26 GitHub Pages CI/CD** and **#27 Final QA & Ship Polish**. The game is already mechanically complete. The repo already has a real production build, unit tests, Playwright coverage, audio integration, and a bundle-budget script. What is still missing is release engineering: a deterministic GitHub Pages deploy, a Pages-safe artifact, and a final QA pass aimed at the actual public build instead of local confidence.
 
-Backlog items covered: **#15 (Music — Barn Party Track)**, **#16 (Music — Shop Track)**, **#17 (SFX — Animal Entry Sounds)**, **#18 (SFX — Bust)**, **#19 (SFX — Scoring Jingle)**, **#20 (SFX — Purchase)**, **#21 (SFX — Activate Ability)**, **#22 (SFX — Win Fanfare)**, **#23 (SFX — UI Navigation)**.
+Baseline at the start of this sprint:
 
-Out of scope: CI/CD (#26), final QA / ship polish (#27), adaptive music, ambient barn Foley, voiceover, and settings persistence across reloads. This sprint is about complete in-session audio, not a full options menu or audio middleware project.
+- `npm run test` passes
+- `npm run build` passes
+- `npm run check:bundle` passes
+- Current JS bundle is about **27 KB gzipped**, well under the existing **150 KB** hard budget
 
-### Product Rules
+Primary outcome: **a push to `main` publishes a working GitHub Pages build, and that build survives a stranger’s first session on desktop and mobile without feeling like a prototype.**
 
-- Use the browser platform directly. No `howler`, no game engine, no extra runtime dependency just to play two loops and a handful of one-shots.
-- Do not add audio flags, pending cues, or sound state to `GameState`. The reducer stays about mechanics.
-- `night` and `night-summary` share the same barn music bed. The summary gets a scoring flourish on top; it does not get its own third music track.
-- Only one music loop may be active at a time. Entering `win` stops background music and plays the win fanfare as a one-shot.
-- If audio cannot unlock, decode, or play on a given device, the game must remain fully playable with no blocked controls and no console spam loops.
+Out of scope:
 
-After this sprint, all content-facing gameplay work is done. Only shipping infrastructure and final QA remain.
-
----
+- New mechanics, new animals, or balance changes
+- Visual redesigns or broad refactors
+- New hosting targets beyond GitHub Pages
+- Any polish work that cannot be tied to a reproducible bug or a failed QA check
 
 ## Architecture
 
-### 1. Add a dedicated `src/audio` domain, not ad-hoc `new Audio()` calls
+### 1. Single release workflow, not separate CI and CD stacks
 
-The codebase already has clean domains for `game`, `ui`, and `content`. Audio should follow that pattern instead of leaking playback code into components.
+Add **`.github/workflows/deploy-pages.yml`** as the only release workflow.
 
-Add a small audio layer:
+Opinionated choice: keep this in one workflow with two jobs instead of splitting CI and deploy into separate files. The repo is small, the release path is linear, and duplicate workflow logic is a maintenance trap.
 
-```ts
-interface AudioDirector {
-  unlock(): Promise<void>;
-  setMuted(muted: boolean): void;
-  setMusicVolume(value: number): void; // 0..1
-  setSfxVolume(value: number): void;   // 0..1
-  setMusicTrack(track: 'barn-party' | 'shop' | null): void;
-  playCue(cue: AudioCueId): void;
-  suspend(): void;
-  resume(): void;
-}
-```
+Structure:
 
-`AudioDirector` owns one `AudioContext`, one master gain, one music bus, and one SFX bus. It also owns decoded buffer caching, loop start/stop, short crossfades, and simple ducking. `App.tsx` owns exactly one director instance for the lifetime of the page.
+- `verify` job runs on `pull_request` and `push`
+- `deploy` job runs only on pushes to `main`, only after `verify` succeeds
+- Use official GitHub Pages actions only:
+  - `actions/setup-node`
+  - `actions/configure-pages`
+  - `actions/upload-pages-artifact`
+  - `actions/deploy-pages`
+- Use `cache: npm` and `npm ci`
+- Add workflow concurrency so only the newest `main` commit can deploy
+- Grant only the permissions Pages needs: `contents: read`, `pages: write`, `id-token: write`
 
-This is the right trade:
+Release gate inside `verify`:
 
-- `HTMLAudioElement` clones are fine for prototypes, but they are bad at mixing, ducking, and repeated low-latency UI cues.
-- Web Audio gives us predictable gain control, layering, and one-shot reuse without adding a dependency.
-- Keeping the director in `src/audio` prevents UI components from becoming a pile of browser-audio edge cases.
+- `npm ci`
+- `npm run test`
+- `npm run build`
+- `npm run check:bundle`
+- `npm run check:pages`
+- `npm run test:e2e`
 
-### 2. Keep cue derivation out of the reducer
+This sprint should **not** add preview environments, staging deploys, or a second hosting path. `main` is the release branch and GitHub Pages is production.
 
-The reducer is already pure and testable. Do not contaminate it with presentation concerns.
+### 2. Make the artifact relocatable for GitHub Pages
 
-Add `src/audio/deriveCues.ts` as a pure diff layer:
+GitHub Pages is the main technical risk because it serves this project from a subpath. The safest solution for this app is to make the built artifact relocatable instead of hardcoding the repository name into the build.
 
-- Input: previous `GameState`, next `GameState`
-- Output: semantic cue ids such as `bust`, `purchase`, `ability`, `score-jingle`, `win-fanfare`
+Change **`vite.config.ts`** to use:
 
-`App.tsx` already centralizes state transitions. It should keep a `previousGameStateRef`, run `deriveCues(prev, next)` in an effect after each reducer update, and hand the resulting cue ids to `AudioDirector`.
+- `base: './'`
 
-This keeps the ownership clean:
+Why this is the right choice here:
 
-- `engine.ts` decides what happened mechanically
-- `deriveCues.ts` decides what should be heard
-- `AudioDirector` decides how to play it
+- The app has no client-side routes, only query params and static assets
+- Relative asset URLs work both in local preview and under `/hoot-n-nanny/`
+- It avoids coupling the build to the repository name
+- It keeps future repo renames from silently breaking production
 
-### 3. Reuse existing UI-local diff seams instead of inventing new state
+Add **`scripts/check-pages-artifact.mjs`** as a hard guardrail. It should inspect `dist/index.html` and fail if any of the following are true:
 
-The current UI already has two excellent audio trigger points:
+- a built asset URL starts with `/assets/`
+- a referenced JS or CSS asset does not exist in `dist/assets`
+- the built page references runtime CDN assets or other external host dependencies
 
-- `BarnGrid.tsx` already compares previous and current guest groups to animate new entries and stack growth. It should also own animal entry SFX. Do **not** add `lastInvitedAnimalId` to state.
-- `TradingPostScreen.tsx` already owns focus navigation and immediate purchases. It is the correct place for shop hover/confirm audio and for plumbing purchase success back to the shared audio layer.
+Add **`check:pages`** to **`package.json`** and treat it as a required deployment gate.
 
-That means audio ownership splits cleanly:
+### 3. Use the existing QA stack as the release harness
 
-| Trigger | Owner | Behavior |
-| --- | --- | --- |
-| Enter `night` or `night-summary` | `App.tsx` | Play / keep barn party loop |
-| Enter `shop` | `App.tsx` | Crossfade to shop loop |
-| Enter `win` | `App.tsx` | Stop music and play win fanfare once |
-| New animal group appears in barn | `BarnGrid.tsx` | Play `animal-entry:<animalId>` |
-| Successful ability resolution | `deriveCues.ts` | Play `ability` once |
-| Successful shop purchase or capacity buy | `deriveCues.ts` | Play `purchase` once |
-| Bust transition | `deriveCues.ts` | Play composite bust cue |
-| Non-bust summary reveal begins | `NightSummaryModal.tsx` or `deriveCues.ts` | Play `score-jingle` once |
-| Hover / keyboard focus / confirm | UI leaf components | Play `ui-hover` or `ui-confirm` |
+Do not invent a second QA system. The repo already has the right primitives:
 
-One opinionated rule matters here: the activate-ability cue fires when the ability actually resolves, not when the player merely enters targeting mode. `peek` resolves immediately, so it sounds on button press. `fetch` and `kick` are two-step interactions, so the cue fires on target confirmation.
+- unit tests for game and audio logic
+- Playwright end-to-end coverage
+- deterministic seeded states
+- bundle-size enforcement
 
-### 4. Use an explicit asset manifest and keep the pack small
+The sprint should extend that harness only where the shipping risk is still uncovered.
 
-Add audio assets under `src/assets/audio/` and register them in `src/audio/manifest.ts`.
+New automated coverage should focus on:
 
-Recommended asset layout:
+- **Bust flow**: bust, pin an animal, enter shop, start next night, confirm the pinned animal is gone for one night
+- **Keyboard-only loop**: complete night -> summary -> shop -> next night without using the mouse
+- **Touch sanity**: verify critical controls and slots work on the mobile project, especially night invite/call, shop purchase, and continue/play-again actions
+- **Production-clean console** on a loss path as well as the existing win path
 
-- `src/assets/audio/music/barn-party.ogg`
-- `src/assets/audio/music/barn-party.mp3`
-- `src/assets/audio/music/shop.ogg`
-- `src/assets/audio/music/shop.mp3`
-- `src/assets/audio/sfx/animals/*.wav` for all 19 `AnimalId`s
-- `src/assets/audio/sfx/bust-scratch.wav`
-- `src/assets/audio/sfx/bust-rooster.wav`
-- `src/assets/audio/sfx/score-jingle.wav`
-- `src/assets/audio/sfx/purchase.wav`
-- `src/assets/audio/sfx/ability.wav`
-- `src/assets/audio/sfx/win-fanfare.wav`
-- `src/assets/audio/sfx/ui-hover.wav`
-- `src/assets/audio/sfx/ui-confirm.wav`
+Add one new deterministic seed for QA:
 
-Two important choices:
+- **`?seed=bust`** wired through **`src/game/state.ts`** and **`src/app/App.tsx`**
 
-- Music gets dual formats because loop playback quality matters and Safari is still the browser most likely to disagree with the happy path.
-- Short SFX stay as tiny mono `.wav` files because decode speed and compatibility matter more here than shaving the last few kilobytes.
+The existing `shop`, `win`, and `ability` seeds already cover the other ship-critical paths. Do not add a pile of synthetic states just because they are easy to add.
 
-Set a hard audio payload budget: **2 MB compressed total across all shipped audio files**. This is separate from the existing JS budget check and prevents the game from quietly turning into a large static download.
+### 4. Final polish is defect-driven, not open-ended
 
-### 5. Mix for readability, not realism
+Final QA always wants to balloon. This sprint needs a hard rule: polish work is only in scope when it fixes something a stranger would immediately hit.
 
-The sound direction is retro + country, but clarity matters more than authenticity. The player should always understand what just happened.
+Allowed polish targets:
 
-Mix rules:
+- broken or confusing deployment behavior
+- touch or keyboard input failures
+- layout overflow or clipped content on phone sizes
+- missing focus visibility or bad focus restoration
+- audio unlock/mute persistence regressions on mobile
+- copy or presentation bugs that make the app read like unfinished debug UI
 
-- Default music gain: `0.45`
-- Default SFX gain: `0.8`
-- UI hover gain: quieter than confirm; it should tick, not chatter
-- Music crossfade: `220ms`
-- Bust cue: duck music to `0.12`, play scratch, then rooster about `140ms` later
-- Win cue: hard-stop background music, play fanfare once, then remain silent on the win screen
-- Polyphony cap: 6 simultaneous SFX voices
-- Entry SFX may get tiny pitch jitter (`±3%`) to avoid repeated goat/goose spam sounding robotic
+Not allowed:
 
-Do not overdesign this into a dynamic mix system. Two buses, one ducking path, and a polyphony cap are enough.
+- rebalancing the shop
+- revisiting animation style
+- rewriting components that already work
+- aesthetic tweaks with no reproducible issue behind them
 
-### 6. Add one global audio control surface
+### 5. Manual QA must happen on the live Pages URL
 
-The current app has three primary scenes. Duplicating sound controls in all three is wasteful and guarantees drift.
+Create **`docs/SHIP-CHECKLIST.md`** and treat it as a real deliverable.
 
-Add `AudioControls.tsx` and mount it once from `App.tsx` as a persistent top-right overlay:
+That checklist should be run against the deployed GitHub Pages URL, not just `vite preview`, because local preview does not cover:
 
-- Always-visible mute toggle
-- Expandable panel with two range inputs: `Music` and `SFX`
-- Keyboard reachable and touch friendly
-- Present in every phase without duplicating markup in `StatusBar`, `TradingPostScreen`, and `WinScreen`
+- the final Pages path
+- real Pages caching behavior
+- first-load behavior from a cold public URL
+- the actual “stranger clicked the link” experience
 
-Do **not** persist settings in `localStorage` this sprint. The project intent explicitly avoids cross-session persistence, and audio preference persistence is nice-to-have, not core to finishing the game’s soundscape.
+Minimum manual checklist items:
 
-### 7. Test decisions, not waveforms
+- fresh load on desktop
+- fresh load on mobile
+- reload while using `?seed=win`, `?seed=shop`, and `?seed=bust`
+- full win path
+- full bust/pin path
+- shop purchase round-trip
+- portrait and landscape on phone
+- keyboard-only navigation on desktop
+- mute/unmute and first user-gesture audio unlock
+- no horizontal overflow or inaccessible controls
 
-Do not try to assert literal speaker output in automated tests.
-
-Testable seams:
-
-- `deriveCues.ts` gets unit tests for exactly-once semantics on bust, purchase, ability, scoring, and win
-- `App.tsx` exposes lightweight debug attributes like `data-audio-track` and `data-audio-unlocked` so Playwright can assert phase ownership and unlock behavior
-- Playwright validates controls, mute state, phase music switching, and that audio never blocks progress through the game flow
-
-That is the right level of confidence for this repo.
-
----
+If the live URL fails the checklist, the sprint is not done even if CI is green.
 
 ## Implementation Phases
 
-### Phase 1 — Asset pack and audio scaffolding
+### Phase 1 - Pages-safe build foundation
 
-Create the `src/audio` directory, the asset manifest, and the `AudioDirector` skeleton. Import all final audio files up front so filenames, cue ids, and gains are locked before UI wiring starts.
+Update **`vite.config.ts`** to use a relocatable base and add **`scripts/check-pages-artifact.mjs`** plus a new **`check:pages`** script in **`package.json`**.
 
-Add the persistent `AudioControls` shell in `App.tsx` with runtime-only settings state: `muted`, `musicVolume`, `sfxVolume`, `unlocked`.
+Exit criteria:
 
-Browser behavior to implement now:
+- `npm run build` succeeds with the new base strategy
+- `npm run check:pages` fails on broken asset paths and passes on a correct build
+- the built artifact contains only repo-local static assets
 
-- First pointer or keyboard interaction calls `unlock()`
-- Hidden tab suspends audio context
-- Returning to the tab resumes audio context if not muted
-- Decode failures fail silent and mark the cue unavailable instead of retrying forever
+### Phase 2 - GitHub Pages workflow
 
-**Exit criteria:**
-- Audio assets are present in-repo and referenced only through `manifest.ts`
-- One `AudioDirector` instance exists for the whole app
-- Mute and volume controls manipulate live gain nodes
-- The game still runs normally if audio never unlocks
+Implement **`.github/workflows/deploy-pages.yml`** with a `verify` job and a `deploy` job. Use official Pages actions, `npm ci`, and a strict main-branch deploy condition.
 
-### Phase 2 — Phase music and fanfare ownership
+Exit criteria:
 
-Wire phase-based music from `App.tsx`.
+- pull requests run the full verification stack without deploying
+- pushes to `main` deploy automatically after a green verification run
+- only the newest `main` commit can publish
 
-Rules to implement:
+### Phase 3 - Release-specific automated QA
 
-- `night` and `night-summary` both use the barn party loop
-- Moving from `night` to `night-summary` must not restart the barn loop
-- Entering `shop` crossfades to the shop track
-- Returning from `shop` to `night` crossfades back to the barn track
-- Entering `win` stops looped music and plays the win fanfare once
+Add the missing deterministic seed and create a new Playwright release smoke spec for bust/pinning, keyboard-only flow, touch sanity, and clean console output on a non-win path.
 
-Do not put this logic into scene components. They mount and unmount too often. `App.tsx` already has the stable phase model.
+Exit criteria:
 
-**Exit criteria:**
-- Exactly one music track is active at a time
-- Phase changes never double-start or abruptly restart the same loop
-- Win screen always gets fanfare instead of layered music chaos
+- a broken bust/pin flow is caught automatically
+- a keyboard-only regression is caught automatically
+- mobile critical actions are covered in Playwright
+- the release smoke spec is stable enough to run in CI on every PR
 
-### Phase 3 — One-shot SFX for gameplay events
+### Phase 4 - Manual ship pass and targeted fixes
 
-Wire the event-driven cues.
+Run the checklist on the live Pages build and fix only the issues found there. Expected fixes are small and localized, mostly in UI components and CSS.
 
-`BarnGrid.tsx`
-- Play the per-animal entry cue whenever a new guest group appears
-- Rowdy chains should trigger one cue per actual entrant
-- Stack growth should not replay the entry cue for the whole stack
+Exit criteria:
 
-`deriveCues.ts`
-- Successful `usedAbilityIds` growth -> `ability`
-- Successful `pop` or `cash` spend in shop -> `purchase`
-- `night.bust` transition or bust summary creation -> `bust`
-- Non-bust summary opening -> `score-jingle`
-- Transition into `win` -> handled as fanfare, not generic score cue
+- checklist completed on the live URL
+- no blocking issues remain on desktop or mobile
+- any fixes are narrow, explainable, and covered by either an automated test or an explicit checklist item
 
-One opinionated exception: the scoring jingle plays once when the summary starts revealing, not once per scoring row. The tally is already visual; repeated jingles would be obnoxious.
+### Phase 5 - Release closure
 
-**Exit criteria:**
-- Every backlog event from #17 through #22 has a concrete cue and a single owner
-- No-op actions and disabled controls do not emit sounds
-- Bust, scoring, and win cues never double-fire across phase transitions
+Do one final end-to-end verification after the last fixes: CI green, Pages updated, live URL checked again, and the release checklist committed with the final expected behavior.
 
-### Phase 4 — UI navigation audio and final mix tuning
+Exit criteria:
 
-Wire `ui-hover` and `ui-confirm` across the interactive surfaces:
-
-- Barn slot selection and inspector buttons
-- Shop card hover / focus / purchase
-- Capacity upgrade card
-- Summary continue / skip button
-- Win screen `Play Again`
-
-Add two guardrails:
-
-- Throttle hover/focus ticks so moving the mouse across a grid does not machine-gun the speaker
-- Do not replay `ui-hover` if focus stays on the same control
-
-Then tune the actual mix:
-
-- Balance entry SFX against the barn loop
-- Make the bust cue cut through the music cleanly
-- Keep purchase and ability cues short enough that repeated actions still feel snappy
-
-**Exit criteria:**
-- Mouse, keyboard, and touch all get navigation feedback
-- The mix remains readable during rapid play, not just in isolated happy paths
-- Audio never feels louder than the game’s visual polish can support
-
-### Phase 5 — Verification and regression coverage
-
-Add tests:
-
-- `src/audio/__tests__/deriveCues.test.ts`
-- `tests/audio-smoke.spec.ts`
-
-Test cases to cover:
-
-- First interaction unlocks audio state
-- Mute toggle suppresses new playback without breaking UI
-- `night` owns barn music, `shop` owns shop music, `win` owns fanfare
-- Ability, purchase, bust, and scoring cues are derived exactly once from representative state transitions
-- Existing `shop-and-win` and personality/motion flows still work with audio enabled
-
-Run:
-
-- `npm run test`
-- `npm run test:e2e`
-- `npm run build`
-- `npm run check:bundle`
-
-Manual pass required on:
-
-- Desktop Chrome
-- Mobile Safari or iOS simulator
-- Mobile Chrome
-
-**Exit criteria:**
-- Automated tests pass
-- Manual browser pass confirms unlock, looping, and mute behavior
-- Existing gameplay flows are unaffected
-
----
+- deployed build matches the latest `main`
+- final verification is repeatable by another contributor
+- the sprint leaves behind a stable release process, not a one-off deploy
 
 ## Files Summary
 
 ### New Files
 
 | File | Purpose |
-| --- | --- |
-| `src/audio/types.ts` | `AudioCueId`, `MusicTrackId`, settings types, and small shared audio interfaces |
-| `src/audio/manifest.ts` | Single source of truth for imported assets, cue metadata, gains, and loop flags |
-| `src/audio/director.ts` | Web Audio playback engine: unlock, decode, buses, loop switching, ducking, polyphony cap |
-| `src/audio/deriveCues.ts` | Pure previous-state / next-state diff for gameplay-driven cue decisions |
-| `src/audio/useAudio.ts` | Preact hook that owns one `AudioDirector` instance and exposes settings + actions |
-| `src/audio/__tests__/deriveCues.test.ts` | Unit tests for exactly-once cue derivation and phase ownership |
-| `src/ui/AudioControls.tsx` | Persistent mute + music/SFX controls |
-| `src/styles/audio.css` | Global audio control layout and responsive styles |
-| `src/assets/audio/**/*` | Two music loops and the full SFX pack checked into the repo |
-| `tests/audio-smoke.spec.ts` | Browser smoke test for unlock, mute, and phase-track switching |
+|------|---------|
+| `.github/workflows/deploy-pages.yml` | Single workflow that verifies the app on PRs and pushes, then deploys GitHub Pages on `main` |
+| `scripts/check-pages-artifact.mjs` | Static verification that the built artifact is safe for GitHub Pages and fully self-contained |
+| `tests/release-smoke.spec.ts` | Playwright coverage for ship-critical flows still missing today: bust/pinning, keyboard-only loop, touch sanity, loss-path console cleanliness |
+| `docs/SHIP-CHECKLIST.md` | Manual validation checklist for the real GitHub Pages URL |
 
 ### Modified Files
 
 | File | Changes |
-| --- | --- |
-| `src/app/App.tsx` | Create the audio director, unlock on first interaction, diff game state for cues, own phase music, mount `AudioControls` |
-| `src/main.tsx` | Import `audio.css` |
-| `src/ui/BarnGrid.tsx` | Reuse existing guest diff to fire per-animal entry audio |
-| `src/ui/InspectorPanel.tsx` | Play confirm cues for invite / call-it-a-night / ability interactions |
-| `src/ui/TradingPostScreen.tsx` | Play navigation cues for keyboard focus changes and wire shop actions into shared audio flow |
-| `src/ui/ShopCard.tsx` | Hover / focus / press cue hooks |
-| `src/ui/BarnUpgradeCard.tsx` | Hover / focus / press cue hooks |
-| `src/ui/NightSummaryModal.tsx` | Trigger score flourish once at reveal start and add confirm cue on continue |
-| `src/ui/WinScreen.tsx` | Confirm cue on `Play Again`; no local music ownership |
-| `src/content/copy.ts` | Labels and helper text for the sound controls |
+|------|---------|
+| `package.json` | Add `check:pages`; keep the release gate visible in the standard npm scripts |
+| `vite.config.ts` | Make the build relocatable with `base: './'` |
+| `playwright.config.ts` | Adjust CI-facing Playwright settings only if needed for stable release-smoke execution and artifact capture |
+| `src/game/state.ts` | Add `createSeededBustState()` for deterministic release QA |
+| `src/app/App.tsx` | Wire `?seed=bust` into initial state resolution |
 
----
+### Likely Polish Targets
+
+These files are not blanket rewrite candidates. They are the narrow surfaces most likely to need fixes once QA starts finding real issues.
+
+| File | Why it is a likely target |
+|------|---------------------------|
+| `src/ui/BarnGrid.tsx` | Bust-state affordances, slot focus, pin-selection clarity |
+| `src/ui/NightSummaryModal.tsx` | Summary continue behavior, loss-path messaging, focus restoration |
+| `src/ui/TradingPostScreen.tsx` | Keyboard/touch navigation and purchase flow issues |
+| `src/ui/AudioControls.tsx` | Mobile tap targets, mute state visibility, first-use clarity |
+| `src/styles/app.css` | Night-phase overflow, focus ring visibility, general responsive cleanup |
+| `src/styles/shop.css` | Shop grid overflow, button spacing, touch ergonomics |
+| `src/styles/audio.css` | Audio controls placement and overlap fixes |
+| `src/styles/win.css` | Final-screen layout cleanup on small viewports if needed |
 
 ## Definition of Done
 
-- The barn party track plays during both `night` and `night-summary`, the shop track plays during `shop`, and entering `win` stops looped music and plays the win fanfare once.
-- All 19 animal types have distinct short entry sounds, including blue-ribbon animals, and rowdy chains correctly play one sound per actual entrant.
-- Bust, scoring, purchase, and activate-ability sounds fire exactly once on successful trigger and never on no-op or disabled interactions.
-- UI hover / focus / confirm sounds work across mouse, keyboard, and touch without noisy repetition.
-- A global sound control surface is visible in every phase and exposes mute, music volume, and SFX volume.
-- Audio failure is non-fatal: blocked autoplay, missing decode support, or muted state never breaks core gameplay.
-- No new runtime dependency is added and `GameState` remains mechanics-only.
-- Existing JS bundle budget still passes and the total compressed audio payload stays at or below 2 MB.
-- `npm run test`, `npm run test:e2e`, `npm run build`, and `npm run check:bundle` all pass.
-
----
+- A push to `main` automatically deploys the static build to GitHub Pages using GitHub Actions.
+- Pull requests run the full verification stack without deploying.
+- The required release gate is green in CI:
+  - `npm run test`
+  - `npm run build`
+  - `npm run check:bundle`
+  - `npm run check:pages`
+  - `npm run test:e2e`
+- The build artifact is relocatable and does not depend on root-hosted `/assets/...` paths.
+- The bundle remains under the existing **150 KB gzipped** hard budget and should stay within roughly **10 KB** of today’s baseline unless there is a documented reason.
+- Automated coverage explicitly includes bust/pinning, keyboard-only navigation, and mobile critical-path interaction.
+- The live GitHub Pages URL passes the manual checklist on at least:
+  - one desktop Chromium browser
+  - one real mobile browser
+- No blocker remains in the following categories:
+  - broken deploy
+  - broken controls
+  - console errors/warnings during normal play
+  - horizontal overflow or clipped primary UI
+  - obviously unfinished copy or presentation
+- Another contributor can merge to `main` and get the same deploy process without tribal knowledge.
 
 ## Risks
 
-| Risk | Impact | Mitigation |
-| --- | --- | --- |
-| Browser autoplay rules make the game appear “silent” on first load | High | Unlock on the first real user gesture, fail silent before unlock, and surface unlocked state for Playwright and manual QA |
-| Cue duplication from state diffs and component mounts | High | Centralize gameplay cue derivation in `deriveCues.ts` and keep a single owner for every cue category |
-| Audio pack grows too large for a casual GitHub Pages game | Medium | Hard-cap audio payload at 2 MB, keep SFX mono and short, and avoid unnecessary alternate takes |
-| Hover/focus sounds become irritating during dense shop navigation | Medium | Throttle hover cues, suppress duplicates on same-element focus, and keep hover quieter than confirm |
-| Loop behavior differs across browsers, especially Safari | Medium | Use an asset manifest with explicit music formats, test desktop + mobile browsers manually, and keep the music system simple |
-
----
+- **Pages path bugs.** Absolute asset paths are the most likely way to ship a broken build. This is why `base: './'` and `check:pages` are mandatory.
+- **Manual QA sprawl.** “Polish” can consume the whole sprint if not constrained. The sprint must stay defect-driven.
+- **Mobile audio differences.** iOS Safari and mobile Chrome can still behave differently from desktop around first-gesture audio unlock and mute persistence. This is partly testable, but not fully automatable.
+- **Repo settings are outside the codebase.** A correct workflow file still fails if GitHub Pages is not enabled or Actions lack permission to deploy.
+- **False confidence from local preview.** A local build passing does not prove the public Pages URL feels finished. The live checklist is a hard requirement for exactly that reason.
 
 ## Dependencies
 
-- Sprint 003’s current phase model and `App.tsx` transition ownership must remain stable; this sprint relies on those seams instead of reworking scene flow.
-- `BarnGrid.tsx` guest-diff behavior must remain intact because it is the cleanest trigger point for entry audio.
-- Final mastered audio assets must be available in-repo, trimmed, and named before Phase 2 closes. Placeholder clips can unblock wiring, but the sprint is not done until they are replaced.
-- Manual validation on at least one Safari-family browser and one Chromium-family mobile browser is required; autoplay and loop behavior cannot be trusted from desktop Chrome alone.
+- Maintainer access to GitHub repository settings to enable GitHub Pages and Actions-based deployment.
+- `main` remains the release branch for this project.
+- The existing npm + lockfile workflow stays authoritative so CI can use `npm ci`.
+- At least one real mobile browser is available for manual validation before the sprint is declared complete.
+- No backend or external service changes are needed; the app remains a fully static browser game.

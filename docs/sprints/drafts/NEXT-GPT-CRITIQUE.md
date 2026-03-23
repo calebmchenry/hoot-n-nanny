@@ -1,109 +1,115 @@
-# Critique of Sprint 004 Drafts
+# Critique of Sprint 005 Drafts
 
-This critique compares `NEXT-CODEX-DRAFT.md` and `NEXT-GEMINI-DRAFT.md` against the current codebase and the project constraints in `docs/INTENT.md`. Both drafts correctly identify Sprint 004 as the audio sprint. The real difference is how well each plan fits the existing seams in `App.tsx`, `BarnGrid.tsx`, `TradingPostScreen.tsx`, and the project’s lightweight, non-blocking browser-game constraints.
+This critique compares `NEXT-CODEX-DRAFT.md` and `NEXT-GEMINI-DRAFT.md` against the current repo state for backlog items 26 and 27. Today the project already has `npm run test`, `npm run build`, `npm run test:e2e`, and `npm run check:bundle`; Playwright already covers win/shop/audio/motion flows; seeded entry states already exist for `win`, `shop`, and `ability`; and there is no GitHub Pages workflow or Pages-specific artifact check yet. The best final sprint should finish release engineering without reopening broad product or design scope.
 
 ## 1. Codex Draft
 
 ### Strengths
 
-- Best fit with the current architecture. `App.tsx` already owns phase transitions, `BarnGrid.tsx` already diffs guest groups and used abilities, and `TradingPostScreen.tsx` already owns local focus and purchase interaction state. The draft mostly builds on those seams instead of fighting them.
-- Strong separation of concerns. `deriveCues.ts` keeps the reducer pure, and the `AudioDirector` isolates browser audio behavior from UI code.
-- Clear product rules. The draft explicitly protects `GameState`, forbids audio from blocking gameplay, defines phase music ownership, and treats audio failure as non-fatal.
-- High implementation clarity. The phases, file summary, budgets, browser matrix, and test targets are concrete enough to reduce ambiguity before work starts.
-- Strong verification posture. It includes unit tests, Playwright coverage, manual browser validation, and bundle checks instead of treating audio as impossible to test.
+- Best fit with the current repo. It names the existing scripts and test posture accurately, recognizes that GitHub Pages release engineering is the missing layer, and builds on the current seeded-state seam in `src/app/App.tsx` and `src/game/state.ts`.
+- Strong scope control. The out-of-scope list and "defect-driven polish only" rule are exactly the right guardrails for the last sprint.
+- Strong release strategy. It treats GitHub Pages path safety, CI gating, and live-site validation as first-class deliverables instead of assuming deployment is a trivial afterthought.
+- Good QA leverage. It extends the existing Playwright stack rather than inventing a parallel QA system, and it targets real current gaps such as bust/pinning, keyboard-only flow, and mobile critical actions.
+- Strongest implementation detail. The phases, files, exit criteria, and Definition of Done are specific enough that another contributor could execute the sprint without guessing.
 
 ### Weaknesses
 
-- It hides a significant content-production task inside an engineering sprint. "Import all final audio files up front" assumes sourcing, editing, trimming, level-matching, and provenance of the asset pack are already solved.
-- The plan is broad enough to become two projects at once: audio engine implementation and audio asset production. If the asset pack slips, much of the engineering plan stalls.
-- One important ownership seam is still unresolved. The scoring jingle is assigned to `NightSummaryModal.tsx` or `deriveCues.ts`, which means the exact-once rule is not fully settled.
-- The sprint surface area is large: new audio domain, new hook, new controls UI, new styles, new asset pack, unit tests, E2E tests, and manual browser QA.
-- The 2 MB audio budget is directionally good, but dual-format music plus 19 per-animal entry clips could force late compression compromises if the budget is not managed during asset production.
+- It is slightly overcommitted to a few implementation choices before validation. `base: './'` is likely the right answer here, but the draft presents it as settled fact instead of a choice to confirm against the real Pages deploy.
+- The "single workflow as the only release workflow" stance is more opinionated than necessary. The important requirement is clean verify/deploy separation with the right gates and permissions, not the exact workflow-file topology.
+- `check:pages` is a good idea, but the draft scopes it mostly around `dist/index.html`. If implemented too narrowly, it could miss CSS `url()` assets, icons, manifests, or future static files outside `dist/assets`.
+- The manual QA requirement is correct, but it does not explain how to prove the live Pages URL is serving the latest deploy rather than a cached older build.
+- The informal "stay within roughly 10 KB of today’s baseline" guidance is useful as a review heuristic, but it is not enforceable in the same way as the existing hard budget.
 
 ### Gaps in Risk Analysis
 
-- Asset sourcing and mastering are not treated as first-class risks, even though they are the most likely schedule risk in the draft.
-- First-play latency is under-specified. The draft covers decode failure, but not the common case where a cue is requested before the corresponding file has finished fetching or decoding.
-- Mobile memory pressure is missing. A small compressed payload can still expand into large decoded buffers on Safari and lower-end devices.
-- The risk table sets a polyphony cap but does not define how voice stealing works once the cap is hit.
-- Seeded debug entry states such as `?seed=shop`, `?seed=win`, and `?seed=ability` are not called out as risk or verification targets, even though the app supports them today.
+- GitHub configuration risk is missing. The draft should explicitly call out that the repo must have GitHub Pages enabled for GitHub Actions, and that Pages/environment permissions can block the first deploy even when the workflow file is correct.
+- Cache and provenance risk are underplayed. Pages or browser caching can make it unclear whether a tester is validating the latest `main` build.
+- CI stability risk is light. Running the full Playwright suite on every PR is reasonable, but the draft does not discuss retries, artifacts, or what happens if the new release-smoke coverage is flaky.
+- Query-param and direct-load risk should be explicit. This repo already relies on `?seed=` states for QA, so live-site reloads and copied seeded URLs are part of the actual Pages risk profile.
+- Accessibility risk is present but not fully measured. Keyboard/focus checks are included, but there is no concrete threshold for touch-target quality or for summary/win-screen focus/live-region behavior.
 
 ### Missing Edge Cases
 
-- `night` to `night-summary` under reduced motion should keep the barn loop continuous even when the normal curtain timing is skipped.
-- Bust is a multi-step flow in this codebase: the game can enter bust targeting before it becomes a completed summary. The bust cue must not fire once on bust and again when the summary is created.
-- `peek` resolves immediately, while `fetch` and `kick` only resolve on target confirmation. The draft states this rule, but it should be elevated into explicit test coverage.
-- `PLAY_AGAIN` from the win screen should reset music and fanfare ownership cleanly.
-- Touch should get confirm feedback without synthetic hover spam from follow-up mouse events.
+- Hard reload from the live Pages URL while on `?seed=shop`, `?seed=win`, and the proposed `?seed=bust`, not just first navigation.
+- First visit with persisted audio settings in `localStorage` while the audio context is still locked.
+- Bust -> pin -> shop -> next night behavior after a reload or fresh deploy, not only in one uninterrupted session.
+- No-op and disabled interactions on keyboard/mobile paths staying stable and silent: full barn, sold-out offer, cancel targeting, or no valid purchase.
+- Validation that the deploy still works cleanly if the repo path changes in the future, since Pages path handling is one of the sprint’s central risks.
 
 ### Definition of Done Completeness
 
-The Codex DoD is the stronger of the two. It covers music ownership, exactly-once cue behavior, global controls, failure non-fatal behavior, dependency constraints, payload budget, and automated verification.
+This is the stronger Definition of Done. It covers deploy automation, CI gates, artifact safety, targeted automated QA, live manual QA, and repeatability.
 
-What is still missing:
+What is still missing or worth tightening:
 
-- A completion criterion for final asset readiness: authored or sourced, trimmed, level-matched, and checked into the repo.
-- Explicit verification for seeded entry states and `PLAY_AGAIN`.
-- An explicit "no console errors or warning spam during a full playthrough" item.
+- An explicit prerequisite that GitHub Pages is configured to deploy from GitHub Actions.
+- Explicit live-site checks for seeded URLs plus hard reload behavior.
+- A concrete way to tie the tested Pages build back to the latest `main` commit or workflow run.
+- A sharper definition of what counts as a blocking console issue, especially if warnings are treated the same as errors.
 
 ## 2. Gemini Draft
 
 ### Strengths
 
-- Strong instinct for bundle discipline and tonal coherence. It takes the "retro + country" direction seriously instead of treating audio as generic polish.
-- Procedural audio avoids asset download and decode latency entirely, which is a real operational advantage for a small static game.
-- The high-level structure is easy to understand: one engine, one audio definitions file, then phased integration across UI, gameplay, and music.
-- It correctly identifies autoplay and mixing fatigue as important audio risks.
+- It correctly identifies the three real themes of the sprint: deployment, performance/bundle discipline, and final QA.
+- It calls out two genuine risks that matter here: GitHub Pages asset paths and mobile audio restrictions.
+- It includes one dependency note the Codex draft should also keep: GitHub Pages has to be enabled and configured in the repository.
+- It is short and easy to scan, which makes the high-level intent clear quickly.
 
 ### Weaknesses
 
-- Poor fit with the current codebase architecture. The file summary explicitly plans to touch `src/game/engine.ts`, which would push presentation concerns into pure game logic.
-- The mute control is assigned to `StatusBar.tsx`, but `StatusBar` only renders during the night flow. That would remove audio controls from `shop` and `win`.
-- Music ownership is left vague as "likely in `App.tsx` or `PhaseTransitionCurtain.tsx`". In this app, `PhaseTransitionCurtain.tsx` is not a stable owner because transitions are skipped when reduced motion is enabled.
-- The draft assumes ZzFX/ZzFXM are an easy fit, but the repo has recently been strict about avoiding new runtime dependencies. The draft never really reconciles that tradeoff.
-- "Unique short blips" for all 19 animals is a weaker bar than the game design’s requirement for short animal noise clips. The draft lowers the quality target without acknowledging it.
-- Cue ownership is too vague. Without a `deriveCues.ts`-style seam, the plan is likely to create duplicate or mistimed sounds from rerenders, mounts, and multi-step transitions.
-- The DoD is too light for a sprint that touches nearly every screen. It mostly says which sounds should exist, not how correctness will be guaranteed.
+- It is too generic for this repo. It barely engages with the existing scripts, tests, seeds, or current file seams, so much of it reads like a template for any Vite game.
+- The proposed dynamic `base` using `process.env.GITHUB_REPOSITORY` is more brittle than necessary because it couples the build output to the repository name instead of making the artifact itself relocatable.
+- `npm run preview` is not a meaningful deployment gate on its own. The repo already has `npm run test:e2e`, which starts preview and actually asserts browser behavior.
+- Wiring `check-bundle-budget.mjs` directly into `build` would make every local build pay a release-gate tax and duplicates the existing dedicated `check:bundle` script.
+- The "Polish & Juice" phase is open-ended in a way that does not match backlog item 27. It invites animation and copy work without requiring a reproducible bug or failed QA check.
+- The audio unlock overlay is proposed too early. The current app already has audio controls and audio-specific Playwright coverage, so an overlay should be a conditional fix, not assumed sprint scope.
+- The file summary is vague and misses important deliverables such as a Pages artifact check script or a live ship checklist.
 
 ### Gaps in Risk Analysis
 
-- No risk is identified for duplicate or mistimed cues caused by deriving audio from the wrong ownership layer.
-- No risk is identified for architectural drift from pushing audio into reducer-adjacent logic or scattered UI handlers.
-- The biggest procedural-audio risk is execution risk, not just aesthetic fit. Two convincing music loops plus 19 recognizable animal cues are a specialized skill bottleneck.
-- There is no risk coverage for reduced-motion mode, seeded debug states, win reset behavior, or tab/background suspend-resume handling.
-- There is no explicit regression or verification risk despite the sprint touching phase transitions, input flows, shop interactions, summary behavior, and the win screen.
+- No CI orchestration risk: permissions, concurrency, PR-vs-main behavior, artifact upload, and deploy sequencing are all absent.
+- No live-URL QA risk: the draft never treats testing the real Pages site as different from testing locally.
+- No regression-risk framing around the repo’s current weak spots: bust/pin flow, keyboard-only loop, focus restoration, non-win console cleanliness, and seeded-state reloads.
+- No risk around subjective language like "requires zero external instructions," which is difficult to measure and easy to argue about.
+- No cache or deep-link risk for Pages subpaths and seeded query parameters.
 
 ### Missing Edge Cases
 
-- `night` and `night-summary` need to share one continuous barn track; summary should not restart the music.
-- `peek` should cue on immediate resolution, while `fetch` and `kick` should only cue after target confirmation.
-- Rowdy chain invites need one entry cue per actual entrant, not one cue per rerendered stack.
-- Disabled shop purchases, sold-out offers, full-capacity invites, and canceled targeting should be silent.
-- Hover and focus sounds need duplicate suppression and throttling, especially in `TradingPostScreen.tsx`, which already manages rapid keyboard focus changes.
-- Entering `win` should stop looped music and play the fanfare once; `PLAY_AGAIN` should restore normal phase music on the new run.
-- Audio failure needs a defined behavior beyond autoplay blocking. If initialization fails or playback is unavailable, the game still needs to remain fully playable.
+- Direct-load and reload behavior for existing seeded URLs: `?seed=shop`, `?seed=win`, and `?seed=ability`.
+- Bust -> pin -> shop -> next night flow, which is one of the few obvious gameplay paths not already covered today.
+- Keyboard-only completion of night -> summary -> shop -> next night.
+- Touch interactions for the current critical controls: invite, call it a night, buy offer, start next night, and play again.
+- Small-screen and landscape overflow regressions, which matter because the current suite already tests a 320px-width case.
+- Console cleanliness on a loss/bust path, not only on the happy path.
+- Focus restoration across transitions and reduced-motion behavior.
 
 ### Definition of Done Completeness
 
-The Gemini DoD is incomplete for this repo. It checks feature presence, but it does not cover:
+The Gemini DoD is incomplete for this repo. It confirms a few important outcomes, but it does not define the mechanics that make the sprint reproducible and reviewable.
 
-- exact-once semantics
-- no-op or disabled-interaction silence
-- persistent controls across all phases
-- touch, keyboard, and mouse behavior
-- failure non-fatal behavior
-- regression tests, manual browser validation, or bundle script verification
-- the repo’s no-new-runtime-dependency posture
+Missing from the DoD:
 
-As written, the sprint could satisfy the Gemini DoD and still ship with duplicate cues, missing controls in `shop` and `win`, or phase-music regressions.
+- Pull-request verification requirements.
+- The explicit release gate scripts to pass.
+- Artifact relocatability or self-containment requirements.
+- A live manual checklist deliverable.
+- Accessibility-specific criteria for focus, keyboard navigation, and touch safety.
+- A measurable definition of "zero external instructions."
 
-## Recommendations for the Final Merged Sprint
+As written, the sprint could satisfy the Gemini DoD and still ship with brittle Pages paths, untested regressions, or no repeatable ship process.
 
-1. Keep the Codex ownership model. `App.tsx` should own phase music, a dedicated `src/audio` domain should own playback, `deriveCues.ts` should map state transitions to semantic cues, and UI leaf components should only fire local navigation sounds.
-2. Keep Gemini’s tonal and bundle discipline, but not its full implementation strategy. The merged sprint should preserve the "retro + country" target and a hard size budget, but it should not make ZzFX/ZzFXM or reducer-level audio dispatch the foundation of the sprint.
-3. Add an explicit asset-production task if the final sprint uses recorded files. Sourcing or authoring, trimming, loudness matching, provenance/licensing, compression, and placeholder replacement should be a named phase with exit criteria.
-4. Expand the risk register to cover first-play decode latency, mobile memory pressure, suspend-resume behavior, voice-stealing rules, seeded entry states, reduced-motion transitions, and win reset behavior.
-5. Expand the DoD to include exactly-once cue tests for bust, purchase, ability, score, and win; silence on disabled or no-op actions; uninterrupted barn music across `night` to `night-summary`; persistent controls in every phase; no console errors during a full playthrough; `npm run test`; `npm run test:e2e`; `npm run build`; `npm run check:bundle`; and manual validation in at least one Safari-family browser and one Chromium-family mobile browser.
-6. Resolve two ownership questions before implementation starts: whether the score jingle is derived centrally or owned by `NightSummaryModal.tsx`, and whether simple UI ticks are procedural or file-based.
+## 3. Recommendations for the Final Merged Sprint
 
-That merged plan would keep the Codex draft’s architectural rigor, absorb the Gemini draft’s emphasis on tone and size discipline, and close the operational gaps most likely to derail implementation.
+1. Use the Codex draft as the base document. It is substantially more repo-aware and much closer to the actual work left by backlog items 26 and 27.
+2. Keep Gemini’s explicit dependency note: the final sprint should state up front that GitHub Pages must be enabled for GitHub Actions before the workflow can succeed.
+3. Keep Codex’s relocatable-artifact direction and `check:pages` gate, but strengthen it with explicit live Pages reload/deep-link checks for seeded URLs and any static asset references beyond bare JS/CSS.
+4. Keep the release gate as separate scripts: `npm run test`, `npm run build`, `npm run check:bundle`, `npm run check:pages`, and `npm run test:e2e`. Do not fold bundle checking into `build`, and do not treat `npm run preview` as a test.
+5. Keep Codex’s defect-driven polish rule. Reject Gemini’s open-ended "juice" phase unless a concrete bug or failed checklist item justifies the work.
+6. Merge Gemini’s mobile-audio concern as a named risk, but make the fix conditional. Only add an explicit unlock overlay if the current controls plus first-gesture flow fail on real devices.
+7. Add three explicit ship checks to the final merged DoD:
+   - Live Pages seeded URLs hard-reload correctly.
+   - The deployed site can be tied back to the latest `main` commit or workflow run.
+   - GitHub Actions/Pages repository settings are documented well enough for another contributor to repeat the setup.
+
+That merged sprint would preserve the Codex draft’s implementation clarity, absorb Gemini’s useful dependency and mobile-audio cautions, and close the remaining operational gaps around live-site verification and deploy reproducibility.

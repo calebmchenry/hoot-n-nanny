@@ -123,6 +123,34 @@ export const createSeededAbilityReminderState = (): GameState => {
   };
 };
 
+export const createSeededBustState = (): GameState => {
+  const base = createInitialGameState('seeded-bust');
+  let nextId = base.nextInstanceNumber;
+
+  const goose = createOwnedAnimal('goose', nextId);
+  nextId += 1;
+
+  const spareChicken = createOwnedAnimal('chicken', nextId);
+  nextId += 1;
+
+  const goats = base.ownedAnimals.filter((animal) => animal.animalId === 'goat').slice(0, 2);
+  const goatIds = new Set(goats.map((animal) => animal.instanceId));
+
+  const remainder = base.ownedAnimals
+    .filter((animal) => !goatIds.has(animal.instanceId))
+    .map((animal) => animal.instanceId);
+
+  return {
+    ...base,
+    nextInstanceNumber: nextId,
+    ownedAnimals: [...base.ownedAnimals, goose, spareChicken],
+    night: {
+      ...base.night,
+      drawPileIds: [goose.instanceId, ...goats.map((goat) => goat.instanceId), spareChicken.instanceId, ...remainder]
+    }
+  };
+};
+
 export const startNextNight = (gameState: GameState, rng: Rng = Math.random): GameState => ({
   ...gameState,
   phase: 'night',

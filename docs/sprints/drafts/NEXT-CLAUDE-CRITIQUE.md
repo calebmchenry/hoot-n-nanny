@@ -1,130 +1,126 @@
-# Sprint 004 — Draft Critique
+# Sprint 005 — Draft Critique
 
 ## Claude Draft: Strengths
 
-1. **Exceptional architectural clarity.** The four-layer separation (engine → sound definitions → integration hook → UI controls) is clean and well-reasoned. Each layer has a single responsibility and the boundaries are crisp: the engine knows nothing about game state, sound definitions are pure functions, the hook is the sole bridge between game state and audio.
+1. **Exhaustive QA test matrix.** The gameplay QA table in Phase 2 enumerates 16 specific scenarios covering every power, edge case (0 cash upkeep, full barn + Rowdy), and long-session stability. This is directly executable as a manual test plan — no interpretation needed.
 
-2. **Zero-dependency procedural audio is the right call.** The project already uses procedural SVG sprites with no image assets. Extending that pattern to audio (raw Web Audio API oscillators, no `.mp3`/`.wav`) keeps the architecture philosophically consistent and the bundle near-zero growth. The <8KB gzipped target is aggressive and appropriate.
+2. **Five-dimensional QA structure.** Breaking QA into gameplay paths, responsive layout, input parity, performance, and cross-browser is disciplined. Each dimension has explicit targets (Lighthouse ≥ 90, touch targets ≥ 44px, specific viewport sizes) rather than vague "test it and see."
 
-3. **Thorough browser compliance strategy.** The AudioContext unlock flow is well-thought-out: lazy creation on first gesture, silent no-ops before unlock, `visibilitychange` resume for mobile tab-switching, no intrusive modals. This covers the real-world pitfalls that trip up Web Audio implementations.
+3. **CI/CD architecture is production-ready.** Two-job design (test on every PR, deploy only on push to main after test passes) with proper permissions scoping (`id-token: write`, `pages: write` only on deploy job). The Chromium-only Playwright decision avoids wasting CI minutes on unnecessary browser binaries.
 
-4. **Rich Definition of Done.** 31 checkboxes across five categories (Music, SFX, Volume & Controls, Browser Compliance, Quality & Regression). This is the most complete DoD of either draft by a wide margin. The bundle size target, regression requirements, and accessibility items are all explicit.
+4. **Env var approach for base path is correct.** The `GITHUB_PAGES=true` conditional preserves local dev ergonomics while producing correct deployed paths. The rationale for why hardcoding would break `npm run preview` shows forethought.
 
-5. **Detailed trigger map.** The state-change-to-audio-call table in the integration layer section eliminates ambiguity about when each sound fires. This is directly implementable without interpretation.
+5. **404.html fallback addresses a real GitHub Pages gotcha.** Single-page apps on GitHub Pages need this, and the draft correctly identifies that `?seed=` debug URLs are the specific use case that would break without it.
 
-6. **Explicit phase ordering with parallelism.** The ASCII dependency graph showing Phases 2 and 3 can run in parallel after Phase 1 is a useful planning artifact that reflects genuine independence in the work.
+6. **Ship polish phase is concrete.** Meta tags, favicon, og:image, incognito playthrough, zero console errors — these are the things that make a game "feel finished to a stranger" and they're all checkboxed rather than hand-waved.
 
-7. **Risk table is comprehensive.** Eight risks with impact ratings and specific mitigations — including the practical "30-minute tuning cap per sound" to prevent scope creep. The "procedural music sounds bad" risk honestly acknowledges the hardest problem in this sprint.
+7. **Risk table is thorough with calibrated impact levels.** Six risks spanning infrastructure (base path, CI flakiness, Actions minutes), QA process (rabbit holes), and browser compat (Safari audio). The "rabbit hole" risk with its 2-file heuristic is a practical scope guard.
 
-8. **Files Summary includes untouched files.** Explicitly listing what *won't* change and why is valuable for implementation confidence — it makes the "audio is purely additive" claim verifiable.
+8. **Files Summary includes untouched files.** Listing what won't change and why provides implementation confidence and prevents scope creep — particularly important for a "ship it" sprint where the temptation to tweak is high.
 
 ## Claude Draft: Weaknesses
 
-1. **No polyphony/voice management design.** The draft mentions capping simultaneous SFX at 8 in the risk table, but the architecture section doesn't describe how this is implemented. Is it a pool? An LRU eviction? Does the engine track active nodes? This is a real implementation decision that's left unspecified.
+1. **Phases 2–4 are serialized unnecessarily.** The draft acknowledges these "can overlap" but presents them in strict waterfall. For a single developer, interleaving responsive checks during gameplay QA is natural and more efficient. The ordering constraint ("don't call Phase N done until Phase N-1's fixes are merged") is sound, but the rigid presentation may slow execution.
 
-2. **Music generation approach is hand-wavy.** "Procedurally generated ~8-bar chiptune hoedown loop" via raw oscillator scheduling is the hardest task in this sprint, and the architecture section gives it roughly the same depth as individual SFX. There's no discussion of how melody is generated (hardcoded note arrays? algorithmic?), how percussion is synthesized (noise bursts? filtered clicks?), or how the ~8-bar structure is composed. The risk table acknowledges this might not work, but the architecture should give more scaffolding for the attempt.
+2. **No CI caching strategy.** `npm ci` and `npx playwright install` run on every invocation with no mention of caching `node_modules` or Playwright browser binaries. On GitHub Actions free tier, this adds 1–2 minutes per run unnecessarily. `actions/setup-node` supports built-in npm caching.
 
-3. **19 unique animal sounds is a large surface area.** The draft calls for "all 14 regular + 5 blue ribbon animals" each with a distinct sound. That's 19 sound design tasks, each requiring creative work. The 30-minute cap helps, but the total time budget for animal sounds alone could be ~9.5 hours. The draft doesn't discuss whether some animals could share a base sound with pitch/timbre variation (which would be more practical and still recognizable).
+3. **No mention of `concurrency` groups.** Without a concurrency setting on the deploy job, rapid successive pushes to `main` could trigger overlapping deployments. GitHub's `concurrency` key with `cancel-in-progress: true` is a one-liner fix.
 
-4. **Test strategy for audio is thin.** Unit tests cover engine lifecycle (volume persistence, mute, unlock gating) but there's no strategy for testing that sounds actually *sound correct*. The Playwright tests check "no console errors" but not that audio actually played. Web Audio API is notoriously difficult to test — the draft should acknowledge this gap and suggest an approach (e.g., mocking AudioContext in unit tests, or accepting that sound quality is a manual QA gate).
+4. **Vite base path uses a custom env var instead of the standard approach.** Vite natively supports `--base` as a CLI flag and `VITE_*` environment variables. Using a custom `GITHUB_PAGES` env var works but is non-standard. A simpler approach: `base: '/hoot-n-nanny/'` in a GitHub Pages-specific build script, or detecting `GITHUB_ACTIONS` (which is set automatically).
 
-5. **No accessibility consideration beyond keyboard navigation.** The volume controls are keyboard-accessible, which is good, but there's no mention of `aria-label` attributes, screen reader announcements, or whether audio-only feedback (like hover sounds) should have visual counterparts for deaf/hard-of-hearing users. The DoD item about `prefers-reduced-motion` is correct but narrow.
+5. **Cross-browser testing relies entirely on manual effort.** The draft lists five browser targets but every one is a manual smoke test. No mention of BrowserStack, Playwright's WebKit engine for Safari approximation, or even a simple checklist template to track pass/fail per browser.
 
-6. **Crossfade during bust is underspecified.** Phase 4 exit criteria mention "Bust immediately interrupts music with the bust SFX, then resumes barn party track at lower volume during pin selection (or crossfades to shop)" — the "or" here is a design decision, not an implementation detail. What actually happens after a bust? This should be definitive.
+6. **No rollback strategy.** If a deployment breaks the live site, there's no documented way to revert. GitHub Pages deployments from Actions can be rolled back by re-running a previous workflow, but this isn't mentioned.
+
+7. **OG image is "even a simple one" — too vague.** For a game that wants to feel finished to a stranger, the link preview image matters. This should either commit to generating one or explicitly punt it with a rationale.
 
 ## Gemini Draft: Strengths
 
-1. **ZzFX/ZzFXM is a pragmatic library choice.** Rather than building everything from raw Web Audio API primitives, Gemini proposes using two battle-tested micro-libraries (~1KB and ~1KB respectively) purpose-built for exactly this use case — retro/chiptune game audio. This dramatically reduces the risk of "procedural music sounds bad" because ZzFXM has an existing tracker workflow for composing chiptune music.
+1. **Concise and focused.** At ~50 lines, the draft is lean and scannable. Every section earns its space. For a sprint that's mostly infrastructure + QA, brevity is appropriate.
 
-2. **Honest about the creative challenge.** "Drafting the actual arrays will require some trial and error in the ZzFX tracker" is refreshingly practical. It acknowledges that sound design is an iterative creative process, not just a coding task.
+2. **Audio context unlock is called out as a first-class concern.** The "Click to Start" overlay suggestion is a concrete UX solution, not just a risk to watch. This shows awareness that mobile audio is the #1 deployment-day surprise.
 
-3. **Compact and focused.** The draft is concise without being incomplete. Four phases, clear file list, straight to the point.
+3. **Performance phase includes actionable compression strategies.** Mentioning WebM/Ogg compression and lazy loading for audio assets shows practical thinking about what "performance audit" actually means beyond running Lighthouse.
 
-4. **Pitch variation for anti-fatigue.** The note about "slight pitch variations (especially for animal entries) to prevent auditory fatigue" is a smart detail that the Claude draft doesn't mention.
+4. **Animation optimization is specific.** Calling out the `top`/`left` → `transform`/`opacity` migration for hardware acceleration is a concrete, implementable suggestion rather than generic "optimize animations."
+
+5. **"Zero external instructions" as a DoD item is user-centric.** This frames polish from the player's perspective rather than the developer's, which is the right lens for a ship sprint.
 
 ## Gemini Draft: Weaknesses
 
-1. **Architecture is significantly underspecified.** There's no gain node routing diagram, no discussion of how music and SFX volumes are independently controlled, no explanation of crossfade mechanics. The Claude draft's four-layer architecture is far more implementable.
+1. **Severely under-specified CI/CD.** No mention of: test job vs. deploy job separation, what tests run in CI (unit? E2E? bundle check?), permissions model, trigger conditions (PR vs. push to main), or runner environment. The workflow would need to be designed from scratch during implementation.
 
-2. **Definition of Done is too sparse.** 12 items vs. Claude's 31. Missing entirely: loop seamlessness, click/pop prevention, overlap management, bundle size target, regression testing, browser compatibility specifics, volume persistence, keyboard accessibility for controls. Several of these are non-trivial requirements that will be discovered during implementation if not planned for.
+2. **No QA test matrix.** "Conduct complete runs targeting win condition and forced bust conditions" is too vague. Which powers are tested? What edge cases? The Claude draft's 16-scenario table is directly implementable; this draft requires the implementer to design the QA plan on the fly.
 
-3. **Introduces external dependencies.** ZzFX and ZzFXM are tiny, but they're still third-party code. The project intent says "lightweight frontend stack" and the existing pattern is zero external runtime dependencies for content generation (procedural SVG, no image libraries). Adding two libraries — even small ones — breaks this pattern. The draft also hedges between vendoring the files and using npm, which is an unresolved decision.
+3. **Definition of Done is skeletal.** Five items vs. Claude's 37 checkboxes. Missing: specific viewport sizes, input method parity, cross-browser targets, performance thresholds, bundle size, memory leaks, meta tags, favicon, console error policy. A DoD this thin can't reliably gate a release.
 
-4. **Touches game engine directly.** The Files Summary says `src/game/engine.ts` will be updated to "dispatch SFX calls on state changes." This violates separation of concerns — game logic should not know about audio. The Claude draft's hook-based approach (diffing state externally) is architecturally superior because it keeps the game engine pure.
+4. **Risk analysis is shallow.** Three risks with no impact ratings, no mitigations beyond "handle it." The Claude draft's risk table has specific mitigations and fallback strategies. Missing risks: CI flakiness, GitHub Actions minutes, QA scope creep, 404 handling, rollback.
 
-5. **No risk analysis for overlap/polyphony.** What happens when Rowdy chain-invites 5 animals in rapid succession? What about rapid hovering across a grid of 20+ slots? The draft doesn't consider these scenarios at all.
+5. **No responsive/viewport specification.** "Mobile viewport" is mentioned but no specific sizes are listed. No landscape testing. No tablet. No touch target sizes. The gap between "test on mobile" and "test at 375×667, 667×375, 768×1024, 1920×1080 with ≥44px touch targets" is the gap between vague intent and verifiable criteria.
 
-6. **No `localStorage` persistence mentioned.** Volume/mute preferences aren't discussed beyond "a mute button exists." Will the user have to unmute every time they reload?
+6. **No cross-browser testing plan.** The draft mentions mobile browsers blocking audio but doesn't list which browsers to test or what "passes" means for each.
 
-7. **No AudioContext unlock strategy beyond one sentence.** "Waiting for the first user interaction" is stated but not designed. What happens if audio is requested before unlock? Is it queued? Dropped? What about mobile tab-switching?
+7. **Modifies `package.json` to wire bundle checks into `build`.** This changes the local dev experience for all developers — `npm run build` would now also run bundle checks. The Claude draft correctly keeps this as a separate `npm run check:bundle` step that CI calls independently.
 
-8. **Bundle size target is 15KB vs. Claude's 8KB.** Nearly double, and less ambitious for a sprint whose core thesis is "procedural audio keeps the bundle small." The 15KB target also doesn't specify gzipped vs. raw.
+8. **No 404.html fallback.** The `?seed=` debug URL use case is unaddressed. Any direct link or bookmark to the deployed game with query params would 404.
 
-9. **Phase ordering doesn't allow parallelism.** Phases are strictly sequential (1→2→3→4) with no discussion of which can overlap. Music (Phase 4) depends on the engine (Phase 1) but not on SFX integration (Phase 2–3), yet it's ordered last.
-
-10. **Missing test strategy entirely.** No unit tests, no E2E tests, no test files in the Files Summary. The Definition of Done has no quality/regression category.
+9. **Phase ordering puts Performance before QA.** If the performance audit surfaces issues, fixes could invalidate QA results. Claude's ordering (gameplay QA → responsive → performance) is more logical because it fixes functional bugs before measuring performance.
 
 ## Gaps in Risk Analysis
 
 ### Claude Draft
-- **No risk for memory leaks.** Long-lived `AudioBufferSourceNode` and `OscillatorNode` references that aren't properly disconnected can leak memory over a 20-30 minute session. The draft mentions "self-disconnect after envelope completes" but doesn't call this out as a risk.
-- **No risk for mobile performance.** Web Audio on mobile (especially older Android) can have higher latency and lower polyphony limits. The draft assumes desktop-like behavior.
-- **No risk for the dev sound palette becoming a time sink.** The "throwaway" test page could itself consume hours of iteration time.
+- **No CORS or mixed-content risk.** If any asset URLs are protocol-relative or absolute, GitHub Pages HTTPS enforcement could cause mixed-content blocks. Low probability given Vite's bundling, but worth a line.
+- **No risk around GitHub Pages cold start / propagation delay.** First deployment and DNS propagation can take minutes. Implementers might panic-debug a working deployment.
+- **No accessibility regression risk.** The QA plan tests keyboard navigation and focus rings, but doesn't mention screen reader testing or ARIA attributes. This is likely out of scope, but the risk of shipping an inaccessible game isn't acknowledged.
 
 ### Gemini Draft
-- **Missing almost all the risks Claude identified:** overlap/polyphony, audio clicks/pops, mobile AudioContext suspension, scope creep on sound design, music quality.
-- **No fallback plan for ZzFXM.** If the tracker workflow can't produce acceptable "country" music, the fallback is "pivot to OGG files" — which would blow the bundle budget and require a completely different architecture. This is a high-impact risk with no real mitigation.
-- **No risk for ZzFX/ZzFXM compatibility.** These are micro-libraries that may not be actively maintained. Any browser-specific bugs would require forking and fixing.
+- **Nearly all significant risks are missing.** No CI flakiness, no scope creep, no 404 handling, no rollback strategy, no GitHub Actions budget, no Safari-specific audio issues beyond the generic "AudioContext" mention. The risk section needs to be rewritten from scratch using Claude's as a baseline.
 
-## Missing Edge Cases (Both Drafts)
+## Missing Edge Cases
 
-1. **Tab backgrounding during music.** When the user switches tabs, should music continue playing (potentially annoying) or pause? Neither draft addresses this. The Claude draft handles AudioContext resume but not intentional pause-on-background.
-2. **Multiple rapid phase transitions.** If the game state flickers (e.g., a bust happens on the same frame as a phase change), what audio wins? Priority/interruption rules aren't defined.
-3. **Audio during phase transition curtain.** The existing `PhaseTransitionCurtain.tsx` presumably has an animation. Should music crossfade start when the curtain starts, or when the new phase renders?
-4. **Game restart mid-music.** If the player wins and clicks "Play Again," does the win fanfare cut immediately or fade? Does barn party music start on the first night of the new game?
-5. **Extremely long sessions.** A player who leaves the tab open for hours — do AudioBuffers or cached oscillator data accumulate?
+Both drafts miss:
+- **localStorage quota exhaustion.** If the game persists state to localStorage, a full quota (common on mobile Safari at 5MB) could cause silent failures or crashes.
+- **Service worker interference.** If a user has a PWA or browser extension that registers a service worker on the domain, cached responses could serve stale builds.
+- **GitHub Pages rate limiting.** Under sudden traffic (e.g., posted to Hacker News), GitHub Pages has undocumented rate limits that could return 429s.
+- **Prefers-reduced-motion.** Neither draft mentions respecting this media query for animations — relevant for the animation polish items.
+
+Claude draft specifically misses:
+- **Dark mode / forced colors.** No mention of `prefers-color-scheme` or Windows High Contrast mode behavior.
+
+Gemini draft specifically misses:
+- **Everything in Claude's QA matrix.** Stacks sharing slots, Sneak not filling barn slots, Calm neutralizing Noisy, Encore accumulating — none of these game-specific edge cases appear.
 
 ## Definition of Done Completeness
 
-### Claude Draft: **Strong (8/10)**
-Comprehensive across functional, technical, and quality dimensions. Missing items:
-- No explicit item for memory leak prevention / cleanup on unmount
-- No item for tab backgrounding behavior
-- No item for ARIA labels on audio controls
-- "Works in Chrome, Firefox, and Safari" is stated but not testable without defining what "works" means (manual QA? automated?)
+### Claude Draft: 37 checkboxes across 6 categories
+**Verdict: Comprehensive.** Covers CI/CD mechanics, all 11 powers, four viewport sizes, three input methods, performance thresholds, five browser targets, and ship polish items. Minor gap: no accessibility-specific DoD items (screen reader, ARIA). Overall, this DoD is release-gate quality.
 
-### Gemini Draft: **Insufficient (4/10)**
-Covers the happy path but misses:
-- Loop seamlessness
-- Click/pop prevention
-- Overlap management
-- Bundle size precision (gzipped?)
-- Volume persistence
-- Keyboard/touch accessibility
-- Regression testing
-- Browser-specific verification
-- Any quality/polish criteria
+### Gemini Draft: 5 items
+**Verdict: Insufficient for release gating.** A sprint could "pass" this DoD while shipping a game that's broken on Firefox, has no favicon, leaks memory after 10 nights, and is unusable with keyboard navigation. This DoD needs to be replaced wholesale with Claude's (or a close derivative).
 
----
+## Recommendations for Final Merged Sprint
 
-## Recommendations for the Final Merged Sprint
+1. **Use Claude's draft as the base.** It is more complete in every dimension: architecture, QA structure, DoD, risk analysis, and files summary. The Gemini draft's strengths can be folded in as enhancements.
 
-1. **Use Claude's architecture as the foundation.** The four-layer separation (engine → sounds → hook → controls) is the right design. The hook-based integration that keeps game logic untouched is non-negotiable — do not put audio calls in `engine.ts` or game logic files.
+2. **Incorporate Gemini's audio context unlock as a Phase 1 item.** If the game doesn't already have a user-interaction gate for AudioContext, adding a "Click/Tap to Start" overlay should be part of the deployment-ready checklist, not discovered during QA.
 
-2. **Seriously evaluate ZzFX for SFX (from Gemini).** Raw Web Audio oscillator scheduling for 19 distinct animal sounds plus 8 other SFX categories is a lot of bespoke audio code. ZzFX's parameterized sound generation could dramatically reduce the implementation effort for SFX while staying under 1KB. However, the sound definition functions should still be wrapped as pure functions matching Claude's `sounds.ts` pattern, so the engine doesn't depend on ZzFX directly.
+3. **Incorporate Gemini's animation optimization note.** Add a bullet to Phase 4 (Performance) to verify animations use `transform`/`opacity` rather than layout-triggering properties. This is a concrete, actionable check.
 
-3. **Keep raw Web Audio for music (from Claude) OR evaluate ZzFXM carefully.** ZzFXM could solve the "procedural music sounds bad" risk, but it adds a dependency and its tracker workflow is a black box. If ZzFXM is adopted, budget explicit time for learning the tracker and define a fallback (simpler ambient arpeggios, not OGG files). If raw Web Audio is used, acknowledge that music generation will be the riskiest phase and timebox it aggressively.
+4. **Add CI caching.** Use `actions/setup-node@v4` with `cache: 'npm'` and cache the Playwright browser binary via `actions/cache`. This is a few lines in the workflow and saves 1–2 minutes per run.
 
-4. **Adopt Claude's DoD wholesale, then add:** ARIA labels on controls, tab-backgrounding behavior (pause music when hidden, resume on visible), cleanup/disconnect verification, and a manual QA gate for subjective sound quality ("does it feel right?").
+5. **Add concurrency groups to the deploy job.** One line prevents overlapping deployments:
+   ```yaml
+   concurrency:
+     group: pages
+     cancel-in-progress: false
+   ```
 
-5. **Adopt Claude's risk table and add:** mobile audio latency, memory leak risk from long sessions, and (if using ZzFX/ZzFXM) library maintenance/compatibility risk.
+6. **Add a rollback note to the Risks section.** Document that reverting to a previous deployment means re-running the last successful workflow run from the Actions tab.
 
-6. **Reduce the 19-animal-sound scope.** Define 5-6 base sound profiles (e.g., poultry-cluck, ruminant-bleat, bird-call, pig-snort, horse-whinny, cat-meow) and derive individual animals via pitch, speed, and waveform variation. This is more achievable, still provides variety, and matches Gemini's pitch-variation insight.
+7. **Adopt Gemini's "zero external instructions" DoD item.** Add it to Claude's Ship Polish section — it's a valuable user-centric gate that Claude's draft implies but doesn't state explicitly.
 
-7. **Keep Claude's phase ordering with parallelism** (Phases 2+3 in parallel after Phase 1). Gemini's strictly sequential ordering wastes time.
+8. **Keep Claude's phase ordering but allow interleaving.** The waterfall presentation is correct for dependency tracking, but add a note that a single developer can interleave phases as long as fixes are merged before the next phase is "called done."
 
-8. **Bundle target: <8KB gzipped** (Claude's target). This is achievable with procedural audio and keeps the project's lightweight ethos intact. Gemini's 15KB is too generous.
+9. **Use `GITHUB_ACTIONS` env var instead of custom `GITHUB_PAGES`.** It's automatically set in GitHub Actions runners, reducing configuration surface. Alternatively, just set `base: '/hoot-n-nanny/'` in a dedicated `build:deploy` npm script.
 
-9. **Include a test strategy.** Use a mocked `AudioContext` (e.g., `OfflineAudioContext` or a stub) for unit tests verifying that the right sounds are triggered for the right state changes. Accept that subjective audio quality is a manual QA gate. Include Playwright tests from Claude's draft for controls and error-free playthrough.
-
-10. **Define audio priority/interruption rules explicitly.** When multiple audio events compete (bust + phase change, rapid animal entries, win fanfare replacing music), the sprint doc should specify which sound wins, which is dropped, and which is queued/staggered.
+10. **Strengthen the OG image commitment.** Either create a simple 1200×630 card (game title + pixel-art owl on a colored background) or explicitly decide "no OG image for v1" with a rationale. "Even a simple one" is not a plan.

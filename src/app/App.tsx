@@ -5,6 +5,7 @@ import { applyIntent } from '../game/engine';
 import {
   createInitialGameState,
   createSeededAbilityReminderState,
+  createSeededBustState,
   createSeededShopState,
   createSeededWinState
 } from '../game/state';
@@ -47,6 +48,10 @@ const resolveInitialState = (): GameState => {
 
   if (seed === 'ability') {
     return createSeededAbilityReminderState();
+  }
+
+  if (seed === 'bust') {
+    return createSeededBustState();
   }
 
   return createInitialGameState(seed ?? undefined);
