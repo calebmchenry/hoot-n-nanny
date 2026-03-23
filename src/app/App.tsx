@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useReducer, useRef, useState } from 'preact/hooks';
+import { deriveCues } from '../audio/deriveCues';
+import { useAudio } from '../audio/useAudio';
 import { applyIntent } from '../game/engine';
 import {
   createInitialGameState,
@@ -6,8 +8,9 @@ import {
   createSeededShopState,
   createSeededWinState
 } from '../game/state';
-import { buildBarnSlots } from '../game/selectors';
+import { buildBarnSlots, isBarnAtCapacity } from '../game/selectors';
 import type { AppIntent, GamePhase, GameState } from '../game/types';
+import { AudioControls } from '../ui/AudioControls';
 import { useControls } from '../input/useControls';
 import { BarnGrid } from '../ui/BarnGrid';
 import { InspectorPanel } from '../ui/InspectorPanel';
@@ -55,7 +58,18 @@ export const App = () => {
   const [selectedSlotIndex, setSelectedSlotIndex] = useState(1);
   const [sceneTransition, setSceneTransition] = useState<SceneTransition | null>(null);
   const transitionTimerIds = useRef<number[]>([]);
+  const previousGameStateRef = useRef<GameState | null>(null);
   const prefersReducedMotion = usePrefersReducedMotion();
+  const {
+    snapshot: audioSnapshot,
+    playCues,
+    syncPhaseMusic,
+    playUiHover,
+    playUiSelect,
+    setMuted,
+    setMusicVolume,
+    setSfxVolume
+  } = useAudio();
 
   const slots = useMemo(() => buildBarnSlots(gameState), [gameState]);
   const transitionActive = sceneTransition !== null;
@@ -70,6 +84,24 @@ export const App = () => {
   useEffect(() => {
     return () => clearTransitionTimers();
   }, []);
+
+  useEffect(() => {
+    const previous = previousGameStateRef.current;
+    if (previous) {
+      const cues = deriveCues(previous, gameState);
+      playCues(cues);
+    }
+
+    previousGameStateRef.current = gameState;
+  }, [gameState, playCues]);
+
+  useEffect(() => {
+    if (!audioSnapshot.unlocked) {
+      return;
+    }
+
+    syncPhaseMusic(gameState.phase);
+  }, [audioSnapshot.unlocked, gameState.phase, syncPhaseMusic]);
 
   const dispatchIfReady = (intent: AppIntent) => {
     if (transitionActive) {
@@ -148,11 +180,18 @@ export const App = () => {
     }
 
     if (gameState.night.targeting && slot.kind === 'animal' && slot.guestGroup) {
+      playUiSelect();
       dispatch({ type: 'SELECT_TARGET', targetId: slot.guestGroup.instanceIds[0] });
       return;
     }
 
     if (slot.kind === 'door') {
+      const canInvite = !gameState.night.targeting && gameState.night.drawPileIds.length > 0 && !isBarnAtCapacity(gameState);
+      if (!canInvite) {
+        return;
+      }
+
+      playUiSelect();
       dispatch({ type: 'INVITE_FROM_DOOR' });
     }
   };
@@ -160,7 +199,10 @@ export const App = () => {
   useControls({
     enabled: gameState.phase === 'night' && !transitionActive,
     selectedSlotIndex,
-    onSelectSlot: setSelectedSlotIndex,
+    onSelectSlot: (slotIndex) => {
+      setSelectedSlotIndex(slotIndex);
+      playUiHover(`barn-slot-${slotIndex}`, 'focus');
+    },
     onActivateSlot: activateSlot,
     onCancel: () => dispatchIfReady({ type: 'CANCEL_TARGETING' })
   });
@@ -195,18 +237,40 @@ export const App = () => {
       data-phase={gameState.phase}
       data-transition={sceneTransition?.stage ?? 'idle'}
       data-transition-to={sceneTransition?.to ?? undefined}
+      data-audio-track={audioSnapshot.currentTrack ?? 'none'}
+      data-audio-unlocked={audioSnapshot.unlocked ? 'true' : 'false'}
+      data-audio-muted={audioSnapshot.muted ? 'true' : 'false'}
     >
+      <AudioControls
+        muted={audioSnapshot.muted}
+        musicVolume={audioSnapshot.musicVolume}
+        sfxVolume={audioSnapshot.sfxVolume}
+        unlocked={audioSnapshot.unlocked}
+        onSetMuted={setMuted}
+        onSetMusicVolume={setMusicVolume}
+        onSetSfxVolume={setSfxVolume}
+        onHoverControl={playUiHover}
+        onSelectControl={playUiSelect}
+      />
+
       {gameState.phase === 'shop' ? (
         <TradingPostScreen
           gameState={gameState}
           onBuyOffer={(offerId) => dispatchIfReady({ type: 'SHOP_BUY_OFFER', offerId })}
           onBuyCapacity={() => dispatchIfReady({ type: 'SHOP_BUY_CAPACITY' })}
           onStartHootenanny={() => beginSceneTransition({ type: 'SHOP_START_HOOTENANNY' }, 'night')}
+          onHoverControl={playUiHover}
+          onSelectControl={playUiSelect}
         />
       ) : null}
 
       {gameState.phase === 'win' ? (
-        <WinScreen gameState={gameState} onPlayAgain={() => dispatchIfReady({ type: 'PLAY_AGAIN' })} />
+        <WinScreen
+          gameState={gameState}
+          onPlayAgain={() => dispatchIfReady({ type: 'PLAY_AGAIN' })}
+          onHoverControl={playUiHover}
+          onSelectControl={playUiSelect}
+        />
       ) : null}
 
       {gameState.phase !== 'shop' && gameState.phase !== 'win' ? (
@@ -214,7 +278,13 @@ export const App = () => {
           <StatusBar gameState={gameState} />
           <section className="night-layout">
             <div className="barn-grid-wrap">
-              <BarnGrid gameState={gameState} selectedSlotIndex={selectedSlotIndex} onSelectSlot={setSelectedSlotIndex} />
+              <BarnGrid
+                gameState={gameState}
+                selectedSlotIndex={selectedSlotIndex}
+                onSelectSlot={setSelectedSlotIndex}
+                onHoverControl={playUiHover}
+                onSelectControl={playUiSelect}
+              />
             </div>
             <InspectorPanel
               gameState={gameState}
@@ -222,6 +292,8 @@ export const App = () => {
               onInvite={() => dispatchIfReady({ type: 'INVITE_FROM_DOOR' })}
               onCallItANight={() => dispatchIfReady({ type: 'CALL_IT_A_NIGHT' })}
               onUseAbility={(sourceId) => dispatchIfReady({ type: 'USE_ABILITY', sourceId })}
+              onHoverControl={playUiHover}
+              onSelectControl={playUiSelect}
             />
           </section>
 
@@ -229,10 +301,17 @@ export const App = () => {
             gameState={gameState}
             onSelectTarget={(targetId) => dispatchIfReady({ type: 'SELECT_TARGET', targetId })}
             onCancel={() => dispatchIfReady({ type: 'CANCEL_TARGETING' })}
+            onHoverControl={playUiHover}
+            onSelectControl={playUiSelect}
           />
 
           {gameState.phase === 'night-summary' && gameState.lastNightSummary ? (
-            <NightSummaryModal summary={gameState.lastNightSummary} onContinue={onContinueFromSummary} />
+            <NightSummaryModal
+              summary={gameState.lastNightSummary}
+              onContinue={onContinueFromSummary}
+              onHoverControl={playUiHover}
+              onSelectControl={playUiSelect}
+            />
           ) : null}
         </>
       ) : null}

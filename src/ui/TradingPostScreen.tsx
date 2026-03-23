@@ -12,6 +12,8 @@ interface TradingPostScreenProps {
   onBuyOffer: (offerId: string) => void;
   onBuyCapacity: () => void;
   onStartHootenanny: () => void;
+  onHoverControl: (targetId: string, input?: 'mouse' | 'focus') => void;
+  onSelectControl: () => void;
 }
 
 type FocusTarget = 'offer' | 'capacity' | 'hootenanny' | null;
@@ -20,7 +22,9 @@ export const TradingPostScreen = ({
   gameState,
   onBuyOffer,
   onBuyCapacity,
-  onStartHootenanny
+  onStartHootenanny,
+  onHoverControl,
+  onSelectControl
 }: TradingPostScreenProps) => {
   const shopState = gameState.shopState;
   const offers = useMemo<ShopOffer[]>(
@@ -61,6 +65,15 @@ export const TradingPostScreen = ({
     const node = id ? refs.current[id] : null;
     node?.focus();
   }, [focusedIndex, focusIds]);
+
+  useEffect(() => {
+    const focusedId = focusedIndex === null ? null : focusIds[focusedIndex] ?? null;
+    if (!focusedId) {
+      return;
+    }
+
+    onHoverControl(`shop-focus-${focusedId}`, 'focus');
+  }, [focusIds, focusedIndex, onHoverControl]);
 
   useEffect(() => {
     if (!shopState) {
@@ -136,6 +149,7 @@ export const TradingPostScreen = ({
     }
 
     if (focusedTarget === 'hootenanny') {
+      onSelectControl();
       onStartHootenanny();
     }
   };
@@ -253,6 +267,7 @@ export const TradingPostScreen = ({
               purchased={recentPurchaseOfferId === offer.offerId}
               entryIndex={index}
               onFocusCard={() => setFocusedIndex(index)}
+              onHoverControl={onHoverControl}
               onPurchase={() => {
                 setRecentPurchaseOfferId(offer.offerId);
                 onBuyOffer(offer.offerId);
@@ -273,6 +288,7 @@ export const TradingPostScreen = ({
           maxed={maxed}
           focused={focusedId === 'capacity'}
           onFocusCard={() => setFocusedIndex(offers.length)}
+          onHoverControl={onHoverControl}
           onPurchase={onBuyCapacity}
           buttonRef={(element: HTMLButtonElement | null) => {
             refs.current.capacity = element;
@@ -283,8 +299,14 @@ export const TradingPostScreen = ({
           type="button"
           className={`hootenanny-button${focusedId === 'hootenanny' ? ' focused' : ''}`}
           onFocus={() => setFocusedIndex(offers.length + 1)}
-          onMouseEnter={() => setFocusedIndex(offers.length + 1)}
-          onClick={onStartHootenanny}
+          onPointerEnter={(event) => {
+            setFocusedIndex(offers.length + 1);
+            onHoverControl('shop-hootenanny', event.pointerType === 'mouse' ? 'mouse' : 'focus');
+          }}
+          onClick={() => {
+            onSelectControl();
+            onStartHootenanny();
+          }}
           data-testid="start-next-night"
           ref={(element) => {
             refs.current.hootenanny = element;

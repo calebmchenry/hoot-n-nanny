@@ -25,6 +25,7 @@ interface ShopCardProps {
   purchased: boolean;
   entryIndex: number;
   onFocusCard: () => void;
+  onHoverControl: (targetId: string, input?: 'mouse' | 'focus') => void;
   onPurchase: () => void;
   buttonRef?: (node: HTMLButtonElement | null) => void;
 }
@@ -36,6 +37,7 @@ export const ShopCard = ({
   purchased,
   entryIndex,
   onFocusCard,
+  onHoverControl,
   onPurchase,
   buttonRef
 }: ShopCardProps) => {
@@ -58,8 +60,14 @@ export const ShopCard = ({
     <button
       type="button"
       className={className}
-      onFocus={onFocusCard}
-      onMouseEnter={onFocusCard}
+      onFocus={() => {
+        onFocusCard();
+        onHoverControl(`shop-card-${offer.offerId}`, 'focus');
+      }}
+      onPointerEnter={(event) => {
+        onFocusCard();
+        onHoverControl(`shop-card-${offer.offerId}`, event.pointerType === 'mouse' ? 'mouse' : 'focus');
+      }}
       onClick={onPurchase}
       disabled={unavailable}
       data-offer-id={offer.offerId}

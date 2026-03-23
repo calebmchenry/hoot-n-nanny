@@ -1,59 +1,79 @@
-# NEXT-GEMINI-CRITIQUE
+# Critique of Sprint 004 Drafts
 
-## Review: NEXT-CLAUDE-DRAFT (Sprint 003)
+This document provides a comparative critique of the two proposed drafts for Sprint 004 (Sound of the Barn), analyzing their strengths, weaknesses, risk assessments, edge cases, and Definition of Done (DoD) completeness. It concludes with recommendations for a final merged sprint plan.
+
+## 1. Claude Draft (Procedural Audio)
 
 ### Strengths
-- **CSS-First Specificity:** Provides a highly detailed and concrete plan for CSS animations, including specific keyframes (`bounce-in`, `count-pulse`, `slide-in-up`), easings (`steps()`), and custom properties (`--slot-index` for staggering).
-- **Clear Tone Targets:** Provides excellent concrete examples of the desired copy (e.g., the Goat, the Dragon, power flavor text), setting a very clear bar for the "goofy, warm, scrappy" tone.
-- **Micro-interactions:** Identifies great opportunities for subtle juice, like the idle bob in the barn, button press feedback, and the screen shake on bust.
+* **Zero Asset Footprint:** Relying entirely on the Web Audio API for procedural generation means no `.mp3`, `.wav`, or `.ogg` files to download, keeping the bundle size virtually unchanged and avoiding network latency issues.
+* **Detailed Audio Architecture:** The separation of the `AudioEngine` (singleton), `sounds.ts` (pure Web Audio generators), and `hooks.ts` (`useGameAudio`) is highly robust and idiomatic for a React/Preact application.
+* **Browser Autoplay Handling:** The lazy `AudioContext` instantiation strategy on the first user gesture is well thought out and avoids intrusive UI modals.
+* **Granular Control:** Procedural audio allows for dynamic runtime modifications (e.g., slight pitch variations on rapid triggers) easily without needing multiple asset variations.
 
 ### Weaknesses
-- **Engine Purity Violation:** Proposes adding `transitionPhase` and `setTimeout` orchestration directly into the `App.tsx` reducer / game engine. This tightly couples presentation timing to the core game logic, violating the principle of keeping the engine pure and synchronous.
-- **Tally Animation Naivety:** Plans to animate the scoring tally but fails to recognize that the current engine outputs a `resolutionLog` of pre-formatted strings. Animating based on parsed strings is fragile and limits the quality of the tally sequence.
+* **High Implementation Risk for SFX:** Procedurally generating 19 distinct, instantly recognizable animal sounds (plus music) using raw oscillators is an incredibly specialized skill. It is highly probable that the sounds will be generic "beeps" and "boops" rather than thematic, polished audio.
+* **Time Sink:** Tuning envelopes, filters, and oscillators manually in code to sound "good" is notoriously time-consuming and often leads to an endless tweaking loop.
+* **Throwaway Work:** Suggests building a "dev-only sound palette page," which adds scope not strictly necessary for shipping the feature.
 
 ### Gaps in Risk Analysis
-- **Unskippable Animations:** Fails to identify the risk of player fatigue from repetitive animations. There is no mention of allowing the user to click/tap to skip the tally or phase transitions.
+* The risk of "Procedural music sounds bad" is identified, but the mitigation ("fall back to simpler ambient textures") doesn't solve the core problem if the result still feels incongruous with the game's high visual polish. It also underestimates the difficulty of the 19 animal sounds.
+* Doesn't fully address what happens if the device physically cannot output audio or if the Web Audio API is partially implemented/buggy on certain older browsers (though it mentions Safari inconsistencies).
 
 ### Missing Edge Cases
-- How do animations behave if the player clicks rapidly (e.g., buying multiple animals fast)? The draft mentions a wiggle and counter pulse, but rapid clicks might restart or glitch CSS animations if not handled carefully.
+* Voice stealing / Polyphony limits: It mentions gating against >5 simultaneous sounds, but doesn't detail the drop strategy (e.g., drop oldest, drop quietest, prevent new).
+* `AudioContext` suspension: Only mentions iOS tab switching, but OS-level interruptions (phone calls, alarms) can also suspend the context and require robust resume handling.
 
 ### Definition of Done Completeness
-- Strong on visual and tonal requirements.
-- Missing usability requirements (skipping, keyboard navigation during transitions).
-- Does not mandate copy exhaustiveness testing.
+* **Excellent.** The DoD is comprehensive, split logically by Music, SFX, Controls, Browser Compliance, and Regression.
 
 ---
 
-## Review: NEXT-CODEX-DRAFT (Sprint 003)
+## 2. Codex Draft (Asset-Based Audio)
 
 ### Strengths
-- **Structural Fixes:** Correctly identifies the flaw in the current `resolutionLog` and proposes a necessary data-model refactor to `ResolutionEvent[]`. This is critical for building a robust, skippable tally animation.
-- **Strict Architectural Boundaries:** Explicitly forbids leaking presentation state into the engine. Mandates that motion stays local and lightweight.
-- **Usability Focus:** Strictly requires that all non-trivial sequences (like the summary tally) be skippable by click, tap, or Enter, directly addressing player fatigue.
-- **Robustness:** Recommends adding exhaustiveness tests for copy to ensure new animals or powers don't ship with missing flavor text.
+* **Guaranteed Audio Quality:** Using pre-rendered assets (`.wav`, `.mp3`, `.ogg`) ensures the final product sounds exactly as intended, matching the visual polish.
+* **Predictable Delivery:** Removes the massive technical risk of trying to synthesize complex sounds (like a rooster crow or an acoustic guitar) in JavaScript.
+* **Clean State Separation:** The introduction of `deriveCues.ts` to cleanly diff the `GameState` and emit semantic cues without muddying the reducer is a superb architectural decision.
+* **Pragmatic Budgeting:** Establishing a hard 2MB compressed payload budget is a smart constraint to prevent asset bloat.
 
 ### Weaknesses
-- **Vague Motion Implementation:** The proposed `PhaseTransitionCurtain` and local `useEffect` timers are less concrete than Claude's CSS plan. Implementing exit animations in React without a library is notoriously tricky because components unmount instantly when state changes; Codex waves this away by suggesting a "curtain", which might look cheaper than true choreographed exit/enter animations.
-- **Over-fragmentation:** Proposing three separate copy files (`animalCopy.ts`, `powerCopy.ts`, `uiCopy.ts`) for a game this small might be over-engineering compared to a single centralized file.
+* **Sourcing Bottleneck:** The draft assumes the existence of the audio assets (`src/assets/audio/**/*`). Finding, editing, mastering, and licensing these assets is a significant hidden effort not accounted for in the phases.
+* **Dual Format Complexity:** Shipping both `.mp3` and `.ogg` for music adds to the payload and build complexity. Modern browsers (including Safari 15+) broadly support AAC or MP3 well enough that a single format might suffice for a casual game.
+* **Network Latency:** Assets must be downloaded. The draft doesn't address preload strategies or what happens if a sound is triggered before it has finished downloading.
 
 ### Gaps in Risk Analysis
-- **React Unmount Races:** Does not deeply address the technical challenge of animating a component *out* when the underlying Redux/useReducer state has already moved to the next phase.
+* **Asset Sourcing:** Fails to identify the time and effort required to source and edit the sound effects and music tracks as a risk.
+* **Network Failures:** No risk identified for slow networks where audio assets might stall or fail to load entirely, potentially causing unhandled promise rejections or silent failures during gameplay.
 
 ### Missing Edge Cases
-- If the summary tally is skipped, how does the UI ensure all state (animated counters, log visibility) instantly jumps to the final correct values without intermediate glitches?
+* **Loading States:** What happens if the user clicks a button, but the `ui-confirm.wav` hasn't loaded yet? Is the action delayed, or does it happen silently?
+* **Rapid Polyphony:** While it mentions a "Polyphony cap: 6", it doesn't specify how the `HTMLAudioElement` or Web Audio buffer source handles rapid re-triggering of the *same* asset (e.g., clicking 5 times fast).
 
 ### Definition of Done Completeness
-- Excellent. Covers structural code quality, usability (skip/reduced-motion), and explicitly includes Playwright spec updates for the new UI flows.
+* **Good, but less detailed.** It covers the core requirements and constraints but is less granular than Claude's DoD regarding specific edge cases (like the `prefers-reduced-motion` check).
 
 ---
 
-## Recommendations for Final Merged Sprint
+## 3. Recommendations for the Final Merged Sprint
 
-The final Sprint 003 plan should synthesize the architectural rigor of Codex with the visual specificity of Claude.
+The final sprint should combine the architectural purity of Codex's state handling with a hybrid approach to audio generation to balance payload size and audio quality.
 
-1. **Adopt Codex's Engine Refactor:** You **must** change `NightSummary` to output structured `ResolutionEvent[]` instead of string logs. Do not attempt to animate the tally by parsing strings.
-2. **Keep the Engine Pure (Codex rule, Claude implementation):** Do not put `transitionPhase` in the game engine reducer. Instead, manage transitions in a local UI state machine in `App.tsx`. When the engine says the phase is `shop`, `App.tsx` should hold onto the `summary` UI, trigger the exit animation via CSS `data-transition`, wait for the CSS duration via a local timeout, and *then* render the `shop` UI.
-3. **Mandate Skippable Animations:** All phase transitions and the night summary tally must be skippable by click, tap, or Enter. This is non-negotiable for a snappy game loop.
-4. **Use Claude's CSS-First Techniques:** Utilize `data-transition` attributes, CSS custom properties (`--slot-index`) for staggering, and `steps()` easing for the retro feel.
-5. **Implement Copy Exhaustiveness Tests:** Adopt Codex's idea for a test that fails if any enum value lacks corresponding flavor text. This guarantees the personality pass doesn't degrade over time.
-6. **Centralize Copy Moderately:** A single `src/ui/copy.ts` (Claude's approach) is fine, but organize it strictly by domain (Animals, Powers, UI) to get the benefits of Codex's structure without the file sprawl.
+1. **Hybrid Audio Sourcing:**
+   * **Assets for Complex Sounds:** Use audio files (`.mp3`/`.webm`) for music loops, the bust sequence, the win fanfare, and the 19 animal entries. These are too complex to synthesize well in JS.
+   * **Procedural for UI/Simple SFX:** Synthesize simple UI clicks, hovers, and basic jingles using the Web Audio API (Claude's approach). This saves network requests and payload size for high-frequency sounds that only need to be simple "ticks" or "pops".
+
+2. **Architecture:**
+   * Adopt **Codex's `deriveCues.ts`** pattern. It is the cleanest way to map pure state transitions to side-effectful audio cues without polluting the reducer or React components.
+   * Adopt **Claude's lazy `AudioContext` and gain node routing** as the core of the `AudioDirector`. Even for playing assets, routing them through a Web Audio `GainNode` is superior to managing multiple `HTMLAudioElement` volumes.
+
+3. **Asset Management & Preloading:**
+   * Implement the 2MB asset budget.
+   * Add a specific phase or task for *Asset Sourcing & Mastering*.
+   * Ensure the `AudioDirector` has a robust decoding strategy: load the asset via `fetch`, decode via `AudioContext.decodeAudioData`, and cache the buffer. If it's not cached when requested, fail silently rather than blocking the game.
+
+4. **Polyphony and Ducking:**
+   * Explicitly define the voice-stealing algorithm (e.g., oldest-voice-drops).
+   * Implement Codex's ducking rules (e.g., bust cue ducks background music to 0.12).
+
+5. **Controls:**
+   * Use the shared UI controls approach (persistent top-right overlay). Persisting to `localStorage` (Claude's idea) is low-effort and high-value for user experience, so it should be included despite Codex's restriction.

@@ -1,216 +1,206 @@
-# Sprint 003 — "Personality & Polish"
+# Sprint 004: Sound of the Barn
 
 ## Overview
 
-This sprint takes Hoot N' Nanny from functional to *charming*. The game loop is complete — every mechanic works, every phase exists — but the experience is flat. Transitions are instant. Animals appear without ceremony. Scoring is a static readout. The UI has no voice.
+Sprint 003 gave the game a face. This sprint gives it a voice. Every visual action in the game — inviting an animal, busting, scoring, buying, winning — currently happens in silence. After this sprint, the game has a complete "retro + country" soundscape: two music tracks, seven SFX categories, and player-accessible volume controls.
 
-Sprint 003 adds two things: **animation juice** (items 25) and **written personality** (item 24). These are deeply coupled — a witty description that slides in with a bounce lands differently than one that simply appears. A scoring tally that counts up while a fun quip plays underneath it feels alive. Doing them together means every surface gets one cohesive pass instead of two disjoint ones.
+Backlog items covered: **#15–23** (Music — Barn Party Track, Music — Shop Track, SFX — Animal Entry, SFX — Bust, SFX — Scoring Jingle, SFX — Purchase, SFX — Activate Ability, SFX — Win Fanfare, SFX — UI Navigation).
 
-**What "done" looks like:** The game feels like it was made by someone who loves it. Animals bounce into the barn. Scoring counts up dramatically. Phase transitions have visual rhythm. Every piece of UI copy has a voice — warm, goofy, a little bit country. A stranger landing on the GitHub Pages link should smile within the first 10 seconds.
+Out of scope: CI/CD (#26), Final QA (#27), balance changes, new visual effects, gameplay changes.
+
+### Product Rules
+
+- **Procedural audio only.** All sounds are synthesized at runtime via Web Audio API. No `.mp3`/`.wav`/`.ogg` files. This matches the project's existing pattern (procedural SVG sprites, no image assets) and keeps the bundle near zero growth.
+- **Retro + country feel.** Square waves, triangle waves, short decay envelopes, pentatonic/major scales. Think NES-era chiptune crossed with banjo twang. Not orchestral, not 8-bit-for-the-sake-of-it.
+- **Audio must never block gameplay.** All sound is fire-and-forget. No animation or game logic waits on audio completion.
+- **Browser autoplay policy compliance.** AudioContext is created on first user gesture. Before that, the game works exactly as it does today — silently.
+- **Mute persists.** Volume/mute preference is stored in `localStorage` and restored on reload.
+- **Zero new runtime dependencies.**
 
 ---
 
 ## Architecture
 
-### Design Principles
+### 1. Audio engine: `src/audio/engine.ts`
 
-1. **CSS-first animation.** Every animation uses CSS transitions and `@keyframes`. No JavaScript animation libraries — the bundle stays small, animations are GPU-composited, and the retro aesthetic benefits from discrete `steps()` easing. JS only orchestrates *when* classes are applied, never *how* things move.
+A singleton `AudioEngine` class wrapping the Web Audio API. Responsibilities:
 
-2. **Copy lives in data, not components.** All flavor text, quips, and UI copy moves into dedicated data files (`src/ui/copy.ts` for UI strings, extended `description` fields in `catalog.ts` for animals). Components render what they're given. This keeps the personality layer editable without touching rendering code.
+- Lazy `AudioContext` creation on first user interaction (click/keydown).
+- Two independent gain nodes: `musicGain` and `sfxGain`, both feeding a `masterGain` before `destination`.
+- Music playback: holds a reference to the currently playing music loop. Exposes `playMusic(trackId)` and `stopMusic()`. Crossfades between tracks over 400ms when switching phases.
+- SFX playback: `playSfx(sfxId)` triggers a one-shot sound. Multiple SFX can overlap. Each SFX creates short-lived oscillator/gain nodes that self-disconnect after their envelope completes.
+- Volume control: `setMusicVolume(0–1)`, `setSfxVolume(0–1)`, `setMuted(boolean)`. Reads/writes `localStorage` keys `hnn-music-vol`, `hnn-sfx-vol`, `hnn-muted`.
+- `isUnlocked()` query so the UI can show a "tap to enable audio" hint if needed.
 
-3. **Animation states flow through game state.** Phase transitions get a brief intermediate state (e.g., `night-entering`, `shop-entering`) so CSS can hook into entry/exit animations via data attributes. The game engine controls timing; CSS controls visuals.
+The engine knows nothing about game state. It exposes `playMusic`, `stopMusic`, `playSfx`, and volume methods. The integration layer decides *when* to call them.
 
-4. **No new dependencies.** Everything is achievable with CSS animations, Preact's existing rendering model, and a single new `copy.ts` file. The bundle budget stays untouched.
+### 2. Sound definitions: `src/audio/sounds.ts`
 
-### Key Architectural Decisions
+Pure functions that take an `AudioContext` and a destination `AudioNode` and produce sound. Each function schedules oscillators, gains, and envelopes using `context.currentTime`. No function holds state. Categories:
 
-- **Staggered entry via CSS `animation-delay` computed from slot index**, not JS timeouts. Each barn slot gets `--slot-index` as a CSS custom property; the animation delay is `calc(var(--slot-index) * 60ms)`. Simple, declarative, no cleanup.
+**Music generators:**
+- `barnPartyLoop(ctx, dest)` → Returns an `AudioBufferSourceNode` playing a procedurally generated ~8-bar chiptune hoedown loop. Square wave melody over triangle wave bass, pentatonic major scale, ~140 BPM. Looping enabled.
+- `shopLoop(ctx, dest)` → Same structure, ~90 BPM, laid-back country shuffle feel. More triangle wave, less percussive.
 
-- **Scoring tally uses a lightweight JS counter** (requestAnimationFrame loop in NightSummaryModal) that increments displayed numbers toward their targets. This is the one place JS drives animation because CSS can't animate text content. The counter is ~20 lines, not a library.
+Music loops are rendered to `AudioBuffer` once on first play, then cached. This avoids per-frame scheduling overhead and ensures seamless looping.
 
-- **Phase transition timing uses a `transitionPhase` field on game state** — a string like `'barn-to-summary'` | `'summary-to-shop'` | `'shop-to-barn'` | `null`. The App component sets this before changing `phase`, waits ~400ms via setTimeout, then updates `phase`. Components use `data-transition` attributes to trigger CSS exit/enter animations.
+**SFX generators (all one-shot, <1s duration):**
+- `animalEntry(ctx, dest, animalId)` → Per-animal sound. Maps each `AnimalId` to a characteristic pitch + waveform (goat: short bleat via sawtooth vibrato; chicken: quick staccato clucks; owl: descending hoot via sine; etc.). Each animal should be immediately recognizable.
+- `bust(ctx, dest)` → Two-part: white noise burst (record scratch, 200ms) → silence (150ms) → descending sawtooth "crow" (400ms). Dramatic, unmistakable.
+- `scoringJingle(ctx, dest)` → Rising three-note arpeggio, triangle wave, major triad. Quick celebratory flourish (~500ms).
+- `purchase(ctx, dest)` → High-pitched metallic "cha-ching": two fast sine pings with quick decay, slight pitch bend. (~300ms).
+- `activateAbility(ctx, dest)` → Soft pluck: single triangle wave note with fast attack, medium decay. Subtle so it doesn't distract from the ability's visual effect. (~200ms).
+- `winFanfare(ctx, dest)` → Extended celebration (~2s): ascending pentatonic run → held chord → rhythmic breakdown. Multiple oscillators, the most complex sound in the game.
+- `uiHover(ctx, dest)` → Barely-there tick: single cycle of a high square wave. (~30ms).
+- `uiSelect(ctx, dest)` → Wooden tap: filtered noise burst, very short, slightly lower pitch than hover. (~60ms).
+- `uiNavigate(ctx, dest)` → Soft click: sine wave pip at ~800Hz, 50ms. Slightly more presence than hover but still background-level.
+
+### 3. Integration layer: `src/audio/hooks.ts`
+
+A Preact hook `useGameAudio(gameState, prevGameState)` that lives in `App.tsx`. It diffs current vs. previous game state and calls the audio engine accordingly. This is the **only** place game state touches audio.
+
+Trigger map:
+| State change | Audio call |
+|---|---|
+| `phase` changes to `'night'` | `playMusic('barn-party')` |
+| `phase` changes to `'shop'` | `playMusic('shop')` |
+| `phase` changes to `'win'` | `stopMusic()`, `playSfx('win-fanfare')` |
+| `night.barnResidentIds` grows | `playSfx('animal-entry', newAnimalId)` |
+| `night.bust` becomes truthy | `playSfx('bust')` |
+| `phase` changes to `'night-summary'` and not bust | `playSfx('scoring-jingle')` |
+| `shopState.offers` item stock decreases | `playSfx('purchase')` |
+| `shopState.capacityUpgradeCount` increases | `playSfx('purchase')` |
+| `night.usedAbilityIds` grows | `playSfx('activate-ability')` |
+
+UI navigation sounds (hover, select, navigate) are triggered directly by event handlers in components, not by state diffing. The hook exports the audio engine instance so components can call `engine.playSfx('ui-hover')` etc. on `onMouseEnter`/`onFocus`/`onClick`.
+
+### 4. Volume controls: `src/ui/AudioControls.tsx`
+
+A small fixed-position UI widget (top-right corner or similar). Contains:
+- Mute/unmute toggle button (speaker icon, built with inline SVG, no assets).
+- Music volume slider.
+- SFX volume slider.
+- Collapsed by default to a single speaker icon; expands on click/focus.
+- Keyboard accessible (Tab to reach, Enter to toggle mute, arrow keys for sliders).
+- Reads initial state from `localStorage` on mount.
+
+### 5. AudioContext unlock strategy
+
+Browsers block `AudioContext` until a user gesture. The approach:
+1. `AudioEngine` starts with `ctx = null`.
+2. A one-time `click`/`keydown` listener on `document` creates the `AudioContext` and removes itself.
+3. If the user interacts before any audio is requested, the context is ready silently.
+4. If `playMusic`/`playSfx` is called before unlock, the call is silently dropped (no queuing — the user hasn't gestured yet, so they haven't missed anything).
+5. No intrusive "click to enable sound" modal. The mute button's visual state hints at audio capability.
 
 ---
 
 ## Implementation Phases
 
-### Phase 1: Animation Infrastructure (est. ~30% of work)
+### Phase 1 — Audio engine scaffold
 
-**Goal:** Build the plumbing that all animations hook into.
+Build `src/audio/engine.ts` with `AudioContext` lifecycle, gain node routing, `playMusic`/`stopMusic`/`playSfx` stubs, volume control with `localStorage` persistence, and the autoplay unlock listener.
 
-1. **Add `transitionPhase` to `GameState`** in `types.ts`. Values: `'exiting-night'` | `'entering-summary'` | `'exiting-summary'` | `'entering-shop'` | `'exiting-shop'` | `'entering-night'` | `null`.
+Write `src/audio/__tests__/engine.test.ts` testing: volume persistence round-trip, mute toggling, unlock gating (calls before unlock are no-ops).
 
-2. **Update `App.tsx` reducer** to handle a new `SET_TRANSITION` intent. When the engine produces a phase change (e.g., `CONTINUE_FROM_SUMMARY` → shop), the reducer:
-   - Sets `transitionPhase` to the exit value
-   - After 350ms (setTimeout), sets `transitionPhase` to the enter value and updates `phase`
-   - After another 350ms, clears `transitionPhase` to `null`
+**Exit criteria:**
+- `AudioEngine` can be instantiated, unlocked, and volume state persists across instances.
+- Calling `playSfx` before unlock does not throw.
+- Tests pass.
 
-3. **Add `data-transition` attribute** to the root layout containers in `App.tsx` so CSS can target `[data-transition="exiting-night"]`, etc.
+### Phase 2 — SFX sound definitions
 
-4. **Create `src/styles/animations.css`** with shared keyframes:
-   - `@keyframes slide-in-up` — entrance from below (elements)
-   - `@keyframes slide-out-down` — exit downward
-   - `@keyframes fade-in` / `@keyframes fade-out`
-   - `@keyframes pop-in` — scale from 0.8 to 1.0 with overshoot to 1.05
-   - `@keyframes bounce-in` — for animals entering barn slots
-   - `@keyframes count-pulse` — subtle scale pulse for number changes
-   - `@keyframes wiggle` — small rotation wiggle for emphasis
-   - `@keyframes flash-attention` — opacity pulse for activate ability reminder
+Implement all SFX generators in `src/audio/sounds.ts`: `animalEntry` (all 14 regular + 5 blue ribbon animals), `bust`, `scoringJingle`, `purchase`, `activateAbility`, `winFanfare`, `uiHover`, `uiSelect`, `uiNavigate`.
 
-5. **Add `--slot-index` CSS custom property** to barn slot rendering in `BarnGrid.tsx`.
+Build a temporary dev-only sound palette page (behind `?audio-test` URL param) that renders a button per sound for rapid iteration and tuning. This is throwaway — it doesn't need to be polished.
 
-### Phase 2: Barn Animations (est. ~25% of work)
+**Exit criteria:**
+- Every sound plays without errors or clicks/pops (proper envelope ramps prevent discontinuities).
+- Each animal has an audibly distinct entry sound.
+- Win fanfare is noticeably more elaborate than other SFX.
+- UI sounds are subtle enough to not be annoying at rapid-fire rates (hovering quickly through a grid).
 
-**Goal:** The hootenanny phase feels alive.
+### Phase 3 — Music loop generation
 
-1. **Animal entry animation.** When an animal is invited, its barn slot gets class `entering`. CSS: `animation: bounce-in 300ms steps(4, end) both; animation-delay: calc(var(--slot-index) * 0ms)` (no stagger for single entry — stagger is for initial barn load if we ever show it). The bounce uses `steps()` for the retro pixel-snap feel.
+Implement `barnPartyLoop` and `shopLoop` in `src/audio/sounds.ts`. Each generates a short looping `AudioBuffer` with melody, bass, and optional percussion channel.
 
-2. **Barn slot idle micro-animation.** Animals in the barn get a very subtle `hover-bob` (1px up/down, 2s loop, `steps(2, end)`). Staggered by slot index so they don't all bob in sync. This makes the barn feel alive even when the player isn't acting.
+Wire music into `AudioEngine.playMusic()` with crossfade support (fade out current over 400ms while fading in next).
 
-3. **Ability activation feedback.** When an activate ability is used:
-   - The slot gets class `ability-fired` → brief flash/glow (box-shadow pulse, 200ms)
-   - The power badge fades out with `fade-out 200ms`
+**Exit criteria:**
+- Barn party track loops seamlessly with no click at the loop point.
+- Shop track loops seamlessly.
+- Crossfade between tracks is smooth (no volume dip, no overlap artifacts).
+- Each track has a distinct feel: barn = energetic, shop = relaxed.
+- Music feels "retro + country" — recognizably chiptune, recognizably hoedown-ish.
 
-4. **Activate ability reminder.** When the barn is at capacity and unused activate abilities exist, those slots get class `attention` → `flash-attention` animation (opacity 0.7↔1.0, 800ms loop). Per the game design doc: "flash tastefully."
+### Phase 4 — Game state integration
 
-5. **Bust animation.** On bust:
-   - Barn container gets class `busted` → `screen-shake` keyframe (4-frame shake, 400ms)
-   - All animal slots simultaneously get `fade-out` (200ms delay after shake)
-   - Red overlay flash (pseudo-element, opacity 0→0.3→0, 500ms)
+Implement `useGameAudio` hook in `src/audio/hooks.ts`. Wire it into `App.tsx`. This phase connects all the audio to actual gameplay.
 
-6. **Door and window interaction feedback.** Clicking the door or window gets a `pop-in` animation on the icon. Selected state gets a subtle glow (box-shadow transition).
+Integration points:
+- Music switches on phase change.
+- Animal entry sounds fire when `barnResidentIds` grows (including `Rowdy` chain invites — each entry gets its own sound, staggered by ~100ms).
+- Bust sound fires when `night.bust` becomes truthy.
+- Scoring jingle fires on non-bust summary transition.
+- Purchase sound fires on shop buy (animal or capacity).
+- Activate sound fires when `usedAbilityIds` grows.
+- Win fanfare fires on win phase, replacing music.
 
-### Phase 3: Scoring & Summary Animation (est. ~15% of work)
+**Exit criteria:**
+- Full playthrough has correct audio at every moment.
+- Rapid invites don't produce a wall of overlapping sound (sounds are short enough that ~2-3 overlapping is fine, but gate against >5 simultaneous).
+- Phase transitions crossfade music cleanly.
+- Bust immediately interrupts music with the bust SFX, then resumes barn party track at lower volume during pin selection (or crossfades to shop).
 
-**Goal:** Scoring feels dramatic and rewarding.
+### Phase 5 — UI navigation sounds and volume controls
 
-1. **Tally counter animation.** In `NightSummaryModal.tsx`, replace static number display with an animated counter:
-   - Pop counts up from 0 → final value over ~1.5s (ease-out curve)
-   - Cash counts up similarly, starting 500ms after Pop finishes
-   - Each number gets `count-pulse` animation on each increment
-   - Use `requestAnimationFrame` with a simple lerp
+Add `AudioControls.tsx` to `App.tsx`. Wire `uiHover`, `uiSelect`, `uiNavigate` sounds into interactive components:
+- Barn slots: hover → `uiHover`, click → `uiSelect`
+- Shop cards: hover → `uiHover`, purchase click → handled by purchase SFX (no double-sound)
+- Buttons (Call It a Night, Hootenanny, Play Again): hover → `uiHover`, click → `uiSelect`
+- Arrow key navigation in barn grid / shop: each move → `uiNavigate`
+- Door/Window slots: click → `uiSelect`
 
-2. **Resolution log stagger.** Each line item in the scoring log slides in from the left with 80ms stagger (CSS `animation-delay` computed from index). Items enter as the counter reaches their contribution.
+Volume controls:
+- Collapsed single-icon default, expands to sliders.
+- Mute toggle immediately silences all audio.
+- Sliders provide independent music/SFX control.
+- State persists to `localStorage`.
 
-3. **Summary modal entrance.** The modal backdrop fades in (200ms) while the content panel slides up with `pop-in` (300ms, 100ms delay).
+**Exit criteria:**
+- UI sounds provide tactile feedback without being annoying.
+- Volume controls work with mouse, keyboard, and touch.
+- Mute state survives page reload.
+- Audio controls don't obscure game UI at any viewport size.
 
-4. **"Call It a Night" button feedback.** When clicked, the button gets a brief press animation (scale 0.95, 100ms) before the transition fires.
+### Phase 6 — Polish, QA, and regression
 
-### Phase 4: Shop & Phase Transition Animation (est. ~15% of work)
+Tuning pass:
+- Adjust relative volumes so music sits behind SFX, SFX sits behind UI sounds in importance but not volume.
+- Ensure bust SFX cuts through clearly.
+- Ensure win fanfare feels climactic.
+- Test with `prefers-reduced-motion` — audio should still play (motion preference is visual, not auditory).
 
-**Goal:** Moving between phases feels smooth; the shop is tactile.
+Add `tests/audio.spec.ts` (Playwright):
+- Verify `AudioControls` widget renders and mute toggle works.
+- Verify mute state persists across reload.
+- Verify no console errors during a full playthrough with audio enabled.
 
-1. **Phase transition choreography.**
-   - Night → Summary: barn dims (opacity 0.5, 300ms), summary modal slides up
-   - Summary → Shop: summary slides down, barn fades out, shop fades in from below
-   - Shop → Night: shop slides out right, barn fades in with a brief "curtain rising" feel (slide from bottom)
+Run all verification:
+- `npm run test`
+- `npm run test:e2e`
+- `npm run build`
+- `npm run check:bundle`
 
-2. **Shop card entrance.** Cards stagger in with `slide-in-up` + `fade-in`, 50ms apart. Blue ribbon cards enter last with a slightly bigger `pop-in` to draw attention.
+Remove the `?audio-test` dev palette if still present.
 
-3. **Purchase feedback.** On buying an animal:
-   - The card gets `wiggle` animation (200ms)
-   - Pop/Cash counters in the header pulse with `count-pulse`
-   - Stock number decrements with a brief fade-swap
-
-4. **Sold-out transition.** When stock hits 0, the card gets class `sold-out-transition` → grayscale filter fades in over 300ms, opacity dims.
-
-5. **Hootenanny button.** Pulsing subtle glow when the player has enough resources for something meaningful (or always, to draw them forward). Brief `pop-in` on hover.
-
-### Phase 5: Humor & Personality Pass (est. ~15% of work)
-
-**Goal:** Every piece of text has a voice.
-
-1. **Create `src/ui/copy.ts`** — centralized UI copy:
-   ```typescript
-   export const COPY = {
-     // Phase titles
-     nightTitle: (n: number) => `Night ${n} — Let's Get Loud`,
-     shopTitle: 'The Trading Post',
-
-     // Actions
-     inviteGuest: 'Invite a Guest',
-     callItANight: 'Call It a Night',
-     hootenanny: 'Back to the Barn!',
-
-     // Inspector - empty states
-     shopForUpgrades: 'Browse the goods, partner.',
-
-     // Scoring
-     bustMessage: 'The farmer woke up! Party\'s over.',
-     winMessage: 'Three blue ribbons! You\'re a legend.',
-
-     // Randomized flavor
-     bustQuips: [
-       'Somebody woke the farmer. Scatter!',
-       'Too much noise! The rooster\'s crowing.',
-       'Busted. The barn goes quiet.',
-       'You pushed your luck and your luck pushed back.',
-     ],
-     nightStartQuips: [
-       'The barn doors creak open...',
-       'Another night, another hootenanny.',
-       'The animals are restless. Let\'s party.',
-       'Who\'s coming to the barn tonight?',
-     ],
-     scoringQuips: [
-       'Not bad for a barn party.',
-       'The crowd goes mild!',
-       'Ka-ching! Well, ka-cluck.',
-       'Tallying up the good times.',
-     ],
-     shopQuips: [
-       'What\'ll it be, partner?',
-       'Fresh critters, fair prices.',
-       'Upgrade your farm, upgrade your life.',
-       'Every animal deserves a party.',
-     ],
-   }
-   ```
-
-2. **Rewrite animal descriptions in `catalog.ts`.** Every animal gets a flavorful 1-2 sentence description. Examples:
-   - Goat: `"Loud, proud, and not sorry about it. Has never once been invited to a party politely."`
-   - Chicken: `"Doesn't do much, but shows up reliably. The friend who brings nothing to the potluck but good vibes."`
-   - Owl: `"Knows who's coming next. Annoyingly smug about it."`
-   - Border Collie: `"Can fetch literally anyone from anywhere. Has never not been a good boy."`
-   - Dragon: `"Kicks out whoever it wants. Nobody argues with a dragon."`
-   - Swan: `"Gets more popular every time it shows up. The swan knows what the swan is worth."`
-
-3. **Add power flavor text** — each power ID gets a short personality description beyond the mechanical one:
-   - Noisy: `"Can't help it. Born this way."`
-   - Stacks: `"The more the merrier — and they only take up one spot."`
-   - Calm: `"Shhhh. It's handling the noise situation."`
-   - Fetch: `"Goes and gets exactly who you want. Good boy/girl/creature."`
-
-4. **Season all UI touchpoints:**
-   - Inspector panel: contextual quips when selecting animals, door, window
-   - Shop inspector: personality in the hover descriptions
-   - Night summary: randomized quip above the tally
-   - Win screen: celebratory flavor text, not just "You win"
-   - Bust screen: commiserating quip
-   - Targeting overlay: flavor-appropriate headers ("Who's getting the boot?" for kick, "Who are you fetching?" for fetch)
-
-5. **Tooltip-style flavor on shop cards.** When hovering/focusing a shop card, the inspector shows the animal's personality description *above* the mechanical description. Personality first, then rules.
-
-### Phase 6: Win Screen & Final Polish (est. ~remaining)
-
-**Goal:** The ending is memorable. Final consistency pass.
-
-1. **Win screen overhaul.**
-   - Blue ribbon animals enter one at a time with `pop-in` stagger (500ms apart)
-   - Confetti-style effect: CSS-only, using multiple animated pseudo-elements with random rotation and fall (3-4 "ribbons" falling, looped)
-   - Victory text types in character-by-character (CSS `steps()` animation on `max-width` or `clip-path`)
-   - "Play Again" button bounces in after the reveal
-
-2. **Button press feedback everywhere.** All interactive buttons get:
-   - `:active` → `transform: scale(0.96); transition: transform 80ms`
-   - Brief box-shadow reduction on press
-
-3. **Hover states audit.** Every interactive element should have:
-   - Cursor: pointer
-   - Subtle lift or glow on hover
-   - Color shift on disabled (not just opacity)
-
-4. **Consistency pass** — ensure animation timings, easings, and retro `steps()` usage are consistent across all components.
+**Exit criteria:**
+- All existing unit and E2E tests pass.
+- New audio tests pass.
+- Bundle size increase < 8KB gzipped (procedural audio is just code).
+- No audio glitches (clicks, pops, stuck oscillators) during normal play.
+- No console warnings about AudioContext state.
+- Full playthrough from night 1 to win feels sonically cohesive.
 
 ---
 
@@ -219,101 +209,127 @@ Sprint 003 adds two things: **animation juice** (items 25) and **written persona
 ### New Files
 | File | Purpose |
 |------|---------|
-| `src/ui/copy.ts` | Centralized UI copy, quips, flavor text |
-| `src/styles/animations.css` | Shared keyframes and animation utility classes |
+| `src/audio/engine.ts` | Singleton AudioEngine: context lifecycle, gain routing, play/stop, volume persistence, autoplay unlock |
+| `src/audio/sounds.ts` | Pure functions generating all music loops and SFX via Web Audio API oscillators and envelopes |
+| `src/audio/hooks.ts` | `useGameAudio` hook: diffs game state, triggers audio engine calls; exports engine ref for UI sounds |
+| `src/audio/__tests__/engine.test.ts` | Unit tests for AudioEngine: volume persistence, mute, unlock gating |
+| `src/ui/AudioControls.tsx` | Mute toggle + volume sliders widget, collapsed by default, keyboard accessible |
+| `tests/audio.spec.ts` | Playwright E2E: controls render, mute persists, no console errors during play |
 
 ### Modified Files
 | File | Changes |
 |------|---------|
-| `src/game/types.ts` | Add `transitionPhase` to `GameState` |
-| `src/game/catalog.ts` | Rewrite all animal `description` fields with personality |
-| `src/game/engine.ts` | Minimal: ensure transition-related intents are handled cleanly |
-| `src/app/App.tsx` | Transition orchestration logic, `data-transition` attributes, import `animations.css` |
-| `src/ui/BarnGrid.tsx` | `--slot-index` CSS var, entry/attention/bust classes, idle bob |
-| `src/ui/NightSummaryModal.tsx` | Animated tally counter, staggered log, quip display, modal entrance animation |
-| `src/ui/InspectorPanel.tsx` | Import and use `copy.ts`, contextual quips, personality descriptions |
-| `src/ui/TradingPostScreen.tsx` | Card entrance stagger, purchase animation triggers, quip header |
-| `src/ui/ShopCard.tsx` | Purchase wiggle, sold-out transition, enhanced hover |
-| `src/ui/ShopInspector.tsx` | Personality-first descriptions from `copy.ts` |
-| `src/ui/TargetingOverlay.tsx` | Flavor-appropriate headers per ability type |
-| `src/ui/WinScreen.tsx` | Staggered reveal, confetti, character-by-character title, celebratory copy |
-| `src/styles/app.css` | Barn animations, bust shake, entry bounce, idle bob, button press, phase transitions |
-| `src/styles/shop.css` | Card entrance stagger, purchase feedback, sold-out transition, enhanced hovers |
-| `src/styles/win.css` | Confetti effect, staggered reveal, typewriter title |
+| `src/app/App.tsx` | Import and call `useGameAudio` hook; mount `AudioControls`; pass audio engine ref to children needing UI sounds |
+| `src/ui/BarnGrid.tsx` | Add `onMouseEnter`/`onFocus` handlers for `uiHover` on barn slots |
+| `src/ui/TradingPostScreen.tsx` | Add `uiHover` on shop cards, `uiNavigate` on keyboard navigation |
+| `src/ui/ShopCard.tsx` | Add `uiHover` on mouse enter |
+| `src/ui/BarnUpgradeCard.tsx` | Add `uiHover` on mouse enter |
+| `src/styles/app.css` | Styles for `AudioControls` positioning and collapsed/expanded states |
 
 ### Untouched Files
 | File | Reason |
 |------|--------|
-| `src/game/shop.ts` | No logic changes needed — shop generation stays the same |
+| `src/game/engine.ts` | Game logic unchanged — audio is purely additive presentation |
+| `src/game/types.ts` | No new game state for audio — audio state is local to `AudioEngine` |
+| `src/game/state.ts` | No changes to game state creation |
+| `src/game/catalog.ts` | Animal definitions unchanged |
 | `src/game/selectors.ts` | Read-only queries unchanged |
+| `src/game/shop.ts` | Shop logic unchanged |
 | `src/game/rng.ts` | Untouched |
-| `src/input/useControls.ts` | Keyboard navigation unchanged |
-| `src/ui/BarnUpgradeCard.tsx` | Minor hover polish via shared CSS, no component changes |
-| `src/ui/AnimalSprite.tsx` | Sprites unchanged — animation happens at the slot level, not the SVG level |
+| `src/content/copy.ts` | No new copy needed for audio |
+| `src/ui/AnimalSprite.tsx` | Sprites unchanged |
+| `src/ui/NightSummaryModal.tsx` | Summary audio triggered by hook, not by modal |
+| `src/ui/WinScreen.tsx` | Win audio triggered by hook, not by screen |
+| `src/ui/PhaseTransitionCurtain.tsx` | No audio on transitions (music crossfade handles it) |
+| `src/input/useControls.ts` | Navigation sounds wired at component level, not control level |
 
 ---
 
 ## Definition of Done
 
-### Personality
-- [ ] Every animal (all 19) has a unique, flavorful description (1-2 sentences, "goofy, warm, scrappy" tone)
-- [ ] Every power has both a mechanical description and a personality-flavored quip
-- [ ] All hardcoded UI strings are replaced with imports from `copy.ts`
-- [ ] Night start, scoring, bust, shop, and win phases each display a randomized contextual quip
-- [ ] Targeting overlay headers are flavor-appropriate per ability type
-- [ ] Inspector panel shows personality description above mechanical description for animals
-- [ ] A non-developer reading the UI copy would describe the tone as "funny" or "charming"
+### Music
+- [ ] Upbeat chiptune hoedown loop plays during the Hootenanny (night) phase
+- [ ] Relaxed country/chiptune loop plays during the Shop phase
+- [ ] Music crossfades smoothly (~400ms) on phase transitions
+- [ ] Music stops (does not loop) on the Win screen — fanfare plays instead
+- [ ] Both loops sound seamless with no audible click or gap at the loop point
+- [ ] Music has a recognizably "retro + country" character
 
-### Animation
-- [ ] Animals bounce into barn slots on invite (retro `steps()` easing)
-- [ ] Barn animals have subtle idle bob animation (staggered, not synchronized)
-- [ ] Bust triggers screen shake + red flash + animal fadeout
-- [ ] Unused activate abilities pulse when barn is at capacity
-- [ ] Ability activation produces a visual flash/glow on the slot
-- [ ] Night summary modal slides in; tally counts up (Pop then Cash); log lines stagger in
-- [ ] Phase transitions have choreographed exit/enter animations (~350ms each direction)
-- [ ] Shop cards stagger in on phase entry; blue ribbon cards enter with emphasis
-- [ ] Purchasing an animal produces a wiggle + counter pulse
-- [ ] Sold-out cards transition smoothly to dimmed/grayscale state
-- [ ] Win screen: blue ribbon animals reveal one at a time, confetti effect, title types in
-- [ ] All buttons have `:active` press feedback (scale 0.96)
-- [ ] All interactive elements have hover states (lift, glow, or cursor change)
+### Sound Effects
+- [ ] Each of the 19 animal types has a unique, recognizable entry sound when entering the barn
+- [ ] Bust triggers a dramatic record-scratch → rooster-crow sequence
+- [ ] Non-bust night scoring triggers a celebratory fiddle flourish jingle
+- [ ] Shop purchases (animal or capacity) trigger a "cha-ching" coin sound
+- [ ] Activating an ability triggers a subtle pluck/chime
+- [ ] Winning with 3 blue ribbons triggers an extended hoedown breakdown fanfare
+- [ ] Hovering interactive elements produces a soft tick
+- [ ] Clicking/selecting produces a wooden tap
+- [ ] Keyboard navigation produces a soft click per move
+- [ ] No SFX produces audible clicks or pops (all envelopes ramp properly)
+- [ ] Rapid-fire sounds (fast hovering, Rowdy chain invites) don't produce a distorted wall of noise
 
-### Quality
-- [ ] Zero new JS dependencies added
-- [ ] All animations use CSS `@keyframes` except the scoring counter (rAF)
-- [ ] Animations respect `prefers-reduced-motion: reduce` (disable non-essential motion)
-- [ ] Existing E2E tests (`tests/shop-and-win.spec.ts`) still pass
-- [ ] Existing unit tests still pass
-- [ ] No layout shift from animations (all animated elements have explicit dimensions or `will-change`)
-- [ ] Bundle size increase < 5KB gzipped (copy + CSS, no new deps)
+### Volume & Controls
+- [ ] Audio controls widget is visible and accessible (keyboard + mouse + touch)
+- [ ] Mute toggle silences all audio instantly
+- [ ] Independent music and SFX volume sliders
+- [ ] Volume/mute preferences persist in `localStorage` across page reloads
+- [ ] Default state is unmuted at reasonable volume levels (music ~0.4, SFX ~0.6)
+
+### Browser Compliance
+- [ ] AudioContext created lazily on first user gesture — no autoplay policy violations
+- [ ] Calling audio functions before unlock is a silent no-op (no errors, no queuing)
+- [ ] No console warnings about AudioContext state during normal play
+- [ ] Works in Chrome, Firefox, and Safari (all use standard Web Audio API)
+
+### Quality & Regression
+- [ ] Game logic is completely untouched — no changes to engine, types, state, or scoring
+- [ ] All existing unit and E2E tests pass without modification
+- [ ] New Playwright spec validates: controls render, mute persists, no console errors
+- [ ] Bundle size increase < 8KB gzipped
+- [ ] `prefers-reduced-motion` has no effect on audio (audio is not motion)
+- [ ] Full playthrough from night 1 through win has correct audio at every moment
 
 ---
 
 ## Risks
 
-| Risk | Likelihood | Impact | Mitigation |
-|------|-----------|--------|------------|
-| **Animation timing conflicts with game logic** — setTimeout-based transitions could race with rapid user input | Medium | Medium | Disable user input during transition phases. `transitionPhase !== null` → all intents are no-ops. |
-| **`steps()` easing looks janky at non-integer pixel values** | Low | Low | Test at common viewport sizes. Use even pixel values for transform distances. |
-| **Tally counter feels sluggish on long nights** — high Pop/Cash values make counting take too long | Medium | Low | Cap counter duration at 2s regardless of value. Use non-linear easing (fast at start, slows near end). |
-| **Personality text reads as "trying too hard"** | Medium | Medium | Write first, then edit ruthlessly. Aim for *one* joke per description, not three. Let most descriptions be warm rather than funny. |
-| **Phase transition delays make gameplay feel slow** | Medium | High | Keep total transition time ≤ 700ms (350ms out + 350ms in). If playtesting feels sluggish, cut to 200ms each. Fast > smooth. |
-| **`prefers-reduced-motion` disabling too much** | Low | Low | Only disable decorative motion (bob, confetti, entrance stagger). Keep functional animations (tally counter, phase changes) but make them instant instead of animated. |
-| **Staggered animations cause re-render storms in Preact** | Low | Medium | All stagger is CSS-only via `animation-delay`. No JS re-renders per stagger step. |
+| Risk | Impact | Mitigation |
+|------|--------|------------|
+| **Procedural music sounds bad** — synthesized loops may not feel "musical" enough for extended play | High | Start with simple pentatonic melodies over predictable bass lines. Keep loops short (~8 bars) so repetition is a feature, not a bug. If quality is insufficient after 4 hours of tuning, fall back to simpler ambient textures (arpeggiated chords, rhythmic patterns) rather than trying to compose full melodies. |
+| **Browser audio inconsistencies** — Web Audio API behavior varies across browsers, especially Safari | Medium | Stick to basic Web Audio features (OscillatorNode, GainNode, AudioBuffer). No AudioWorklet, no exotic node types. Test in Safari early in Phase 1. |
+| **Annoying at volume** — sounds that seem fine individually become grating after 20 minutes of play | Medium | Keep all SFX short (<1s). Music volume defaults to 0.4. Provide easy mute access. Playtest a full game during Phase 6 polish. |
+| **Audio clicks and pops** — discontinuities from abrupt oscillator starts/stops | Medium | Every gain envelope must ramp (even 5ms) rather than jump. `OscillatorNode.stop()` must be preceded by gain ramp-down. Enforce this pattern in code review. |
+| **Overlapping sound overload** — Rowdy chains or rapid hovering produce 10+ simultaneous sounds | Medium | Cap simultaneous SFX at 8 (drop oldest). UI sounds are extremely short (<60ms) so overlap is naturally brief. Animal entry sounds stagger by 100ms for Rowdy chains. |
+| **AudioContext resume on mobile** — iOS Safari may suspend the context on tab switch | Low | Listen for `visibilitychange` and call `ctx.resume()` when the tab becomes visible again. |
+| **Bundle size from music buffers** — rendered AudioBuffers exist only in memory, but the generation code could be large | Low | Music generation is just math — a few hundred lines of oscillator scheduling. Estimated <3KB gzipped. |
+| **Scope creep on sound design** — tweaking "one more thing" on every sound is an infinite loop | Medium | Each sound gets a maximum of 30 minutes of tuning. If it's not right by then, ship it and note it for Final QA (#27). |
 
 ---
 
 ## Dependencies
 
 ### Internal
-- **Sprint 002 complete and stable.** All game phases, scoring, shop, and win mechanics must be working. (Confirmed: Sprint 002 is merged.)
-- **Existing E2E and unit tests passing** as a baseline before any changes.
+- Sprint 003 complete and stable: all animation, copy, and phase transition infrastructure in place.
+- All existing unit and E2E tests passing as baseline.
+- `GameState` shape stable — the audio hook diffs against it, so field renames would break integration.
 
 ### External
-- **None.** No new packages, no sourced assets, no API calls. This is entirely creative work on top of the existing codebase.
+- Web Audio API (supported in all target browsers: Chrome 35+, Firefox 25+, Safari 14.1+).
+- No new npm packages.
+- No audio asset files.
 
-### Ordering Constraints
-- Phase 1 (animation infrastructure) must land before Phases 2-4 and 6.
-- Phase 5 (personality) is independent of Phases 1-4 and can be done in parallel or in any order.
-- Phase 6 (win screen + final polish) should come last as a consistency pass.
+### Ordering
+- Phase 1 (engine scaffold) must come first — everything depends on it.
+- Phase 2 (SFX definitions) and Phase 3 (music loops) can proceed in parallel after Phase 1.
+- Phase 4 (game state integration) depends on Phases 1, 2, and 3.
+- Phase 5 (UI sounds + controls) depends on Phase 4 (needs engine ref wired through App).
+- Phase 6 (polish + QA) comes last.
+
+```
+Phase 1 (engine)
+├── Phase 2 (SFX)     ─┐
+└── Phase 3 (music)    ─┤
+                        └── Phase 4 (integration)
+                              └── Phase 5 (UI sounds + controls)
+                                    └── Phase 6 (polish + QA)
+```

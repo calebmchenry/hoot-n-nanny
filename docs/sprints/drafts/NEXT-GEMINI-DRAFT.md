@@ -1,49 +1,71 @@
-# Sprint 003 Draft — Personality & Polish
+# Sprint 004 — "Sound of the Barn"
 
 ## Overview
-This sprint tackles Backlog Items #24 (Humor & Personality Pass) and #25 (Animation Polish). The core gameplay loop is complete; now the goal is to elevate Hoot N' Nanny from a functional prototype into a charming, lively experience. By the end of this sprint, the game will feature witty flavor text, satisfying animations for phase transitions, snappy UI juice, and an overarching warm, goofy tone that matches the design intent.
+This sprint implements the entire audio layer of Hoot N' Nanny, covering all remaining medium-priority backlog items (15–23). By tackling all audio at once, we ensure a cohesive "retro + country" sonic identity, establish a single unified audio architecture, and balance the mix holistically. This is the final content-focused sprint before we move into shipping infrastructure and final QA.
 
-## Architecture
-Since this is a polish and content sprint on an existing React/TypeScript codebase, architectural changes are minimal. The work is divided into data enrichment and presentation layer updates:
-1. **Data Layer**: Expanding the core game catalog (`Animal`, `Power`) to include descriptive text strings.
-2. **Component Layer**: Updating UI components to surface the new text and integrating animation hooks or class toggles.
-3. **Styling Layer**: Adding robust CSS keyframes and transitions. To adhere to the strict "lightweight frontend" constraints outlined in `INTENT.md`, we will avoid heavy animation libraries (like Framer Motion) and rely purely on Vanilla CSS transitions and keyframe animations.
+## Architecture & Technical Direction
+**Opinionated Stack:** To adhere to the strict "lightweight frontend stack" and "reasonable bundle budget" constraints outlined in the Project Intent, **we will use procedural audio generation instead of importing bulky MP3/WAV files.** 
+- We will use [ZzFX](https://github.com/KilledByAPixel/ZzFX) for all Sound Effects (SFX). It's a tiny (~1KB) micro audio synthesizer perfect for retro/chiptune sounds.
+- We will use [ZzFXM](https://github.com/keithclark/ZzFXM) for the music tracks. It allows us to sequence chiptune music in code, keeping the bundle size microscopically small while perfectly hitting the required "chiptune hoedown" aesthetic.
+
+**Core Audio Engine (`src/audio/engine.ts`):** 
+A singleton or context-provided audio manager that wraps ZzFX/ZzFXM. It will handle:
+- Global mute state and volume control.
+- Crossfading/switching between the Barn Party and Shop music tracks.
+- Playing transient SFX with slight pitch variations (especially for animal entries) to prevent auditory fatigue.
+- Handling browser autoplay policies (waiting for the first user interaction before initializing the `AudioContext`).
 
 ## Implementation Phases
 
-### Phase 1: The Voice (Data & UI Text)
-- **Data Model Update**: Modify `src/game/types.ts` to add `flavorText` and `wittyDescription` fields to the `Animal` and `Power` types.
-- **Content Injection**: Update `src/game/catalog.ts` to include goofy, warm, and scrappy flavor text for every animal and power (e.g., "Goat: Eats tin cans, screams at clouds.", "Noisy: Three strikes and the farmer wakes up.").
-- **UI Integration**: Update `src/ui/ShopInspector.tsx` and `src/ui/InspectorPanel.tsx` to render these new text fields with appropriate typography and spacing, ensuring they don't clutter the essential gameplay information.
+### Phase 1: Audio Engine & Asset Definition
+1. Integrate ZzFX and ZzFXM into the project.
+2. Create `src/audio/engine.ts` to manage the `AudioContext`, track playing state, and expose `playSfx(id)` and `playMusic(trackId)` functions.
+3. Create `src/audio/assets.ts` to define the ZzFX sound parameter arrays (the "instruments" and SFX) and the ZzFXM song arrays. 
+   - *Drafting the actual arrays will require some trial and error in the ZzFX tracker during implementation to hit the "country/chiptune" vibe.*
 
-### Phase 2: Core Gameplay Juice (Animations)
-- **Animal Entry**: Update `src/ui/AnimalSprite.tsx` and associated CSS to animate animals entering the barn. They should use a satisfying "pop" (scale overshoot) or "drop-in" keyframe animation rather than just appearing.
-- **Scoring Tally**: Enhance `src/ui/NightSummaryModal.tsx` and `src/ui/StatusBar.tsx` to animate the Pop and Cash numbers ticking up during scoring, rather than jumping instantly to the final value.
-- **Capacity Warnings**: Implement the design requirement where unused activate abilities "flash tastefully" when the barn is at capacity to remind the player they have options before calling it a night.
+### Phase 2: System SFX Integration
+Wire up the non-gameplay UI sounds.
+- **Item 23 (UI Navigation):** Add soft clicks to `useControls.ts` (keyboard) and UI button `onClick`/`onPointerEnter` handlers.
+- **Item 20 (Purchase):** Trigger a coin clink/cha-ching in `ShopCard.tsx` or the shop action handler.
+- **Volume UI:** Add a mute toggle button to the `StatusBar.tsx`.
 
-### Phase 3: Flow & Feedback (Transitions)
-- **Phase Transitions**: Smooth out the harsh cuts between game phases (Hootenanny → Night Summary → Shop → Hootenanny) with simple CSS fade-ins and fade-outs.
-- **Interaction Feedback**: Audit all clickable elements (shop cards, barn slots, buttons). Ensure every interactive element has a clear hover state (e.g., slight scale up, brightness increase) and an active/click state (e.g., scale down "depress" effect).
+### Phase 3: Gameplay SFX Integration
+Wire up sounds tied to the game loop and state changes.
+- **Item 17 (Animal Entry):** Trigger unique short blips when an animal is added to the barn grid.
+- **Item 21 (Activate Ability):** Trigger a chime when an active ability is used.
+- **Item 18 (Bust):** Trigger a dissonant scratch + rooster crow sequence when the bust state is derived.
+- **Item 19 (Scoring Jingle):** Trigger a celebratory flourish during the scoring phase sequence.
+- **Item 22 (Win Fanfare):** Trigger a major breakdown tune when the WinScreen mounts.
+
+### Phase 4: Music Tracks
+- **Item 15 & 16 (Barn Party & Shop Tracks):** Wire up the phase transition logic (likely in `App.tsx` or `PhaseTransitionCurtain.tsx`) to switch the active ZzFXM loop based on the current game phase.
 
 ## Files Summary
-- **Data**: `src/game/types.ts`, `src/game/catalog.ts`
-- **Components**: `src/ui/ShopInspector.tsx`, `src/ui/InspectorPanel.tsx`, `src/ui/AnimalSprite.tsx`, `src/ui/NightSummaryModal.tsx`, `src/ui/StatusBar.tsx`
-- **Styles**: `src/styles/app.css`, `src/styles/shop.css`, `src/styles/win.css` (plus any component-specific CSS)
+- **`src/audio/engine.ts`** (New): Core Web Audio API manager.
+- **`src/audio/assets.ts`** (New): ZzFX/ZzFXM definitions for all sounds.
+- **`src/audio/zzfx.ts` / `zzfxm.ts`** (New): The micro-libraries themselves (or added via npm if preferred, though raw files are often smaller).
+- **`src/ui/StatusBar.tsx`** (Update): Add mute/volume controls.
+- **`src/app/App.tsx`** (Update): Handle music track switching based on phase.
+- **`src/game/engine.ts` & Various UI Components** (Update): Dispatch SFX calls on state changes/interactions.
 
 ## Definition of Done
-- All animals and powers in the catalog have unique, tone-appropriate flavor text.
-- Flavor text is visible in the Shop and Barn inspector panels without breaking layouts.
-- Animals entering the barn play a distinct entry animation.
-- Score tallies count up dynamically during the scoring phase.
-- Transitions between game phases are animated (no jarring cuts).
-- All interactive UI elements have visible hover and active states.
-- The game's bundle size remains small (no heavy external animation libraries added).
+- [ ] An upbeat chiptune hoedown loop plays during the Hootenanny phase.
+- [ ] A relaxed country/chiptune loop plays during the Shop phase.
+- [ ] Unique entry sounds play for different animal types.
+- [ ] Busting triggers a distinct audio sequence (scratch + crow).
+- [ ] Scoring triggers a celebratory jingle.
+- [ ] Purchasing in the shop triggers a cash/clink sound.
+- [ ] Activating abilities triggers a subtle chime.
+- [ ] Winning triggers a major fanfare.
+- [ ] UI navigation (hover, click) has soft audio feedback.
+- [ ] A mute button exists and successfully silences all audio.
+- [ ] Audio system respects browser autoplay policies (no errors on initial load before interaction).
+- [ ] Bundle size impact is minimal (ideally < 15KB total for all audio).
 
 ## Risks
-- **Scope Creep on Polish**: "Juice" can be an endless rabbit hole. We must timebox animation tweaking to prevent the sprint from dragging on.
-- **Layout Breakage**: Adding new text to the UI could overflow or break responsive layouts on mobile. We must test text lengths and ensure text wrapping/truncation is handled gracefully.
-- **Animation Performance**: CSS animations on many elements (like a full barn) could cause jank on lower-end devices. We will stick to hardware-accelerated CSS properties (`transform`, `opacity`).
+- **Autoplay Policies:** Browsers aggressively block audio until the user interacts with the page. We must ensure the audio engine gracefully waits for the first click/keypress before attempting to play the music or SFX.
+- **Mixing/Levels:** Procedural audio can be piercing. We need to carefully tune the volume of SFX relative to the music to avoid listener fatigue.
+- **Aesthetic Alignment:** Generating "country" sounding music purely via a chiptune tracker (ZzFXM) requires some musical sequencing skill. If it proves too difficult to get right quickly, we may need to pivot back to highly compressed, externally produced OGG files as a fallback.
 
 ## Dependencies
-- Assumes Sprint 002 (Core loop, shop, win condition) is fully complete and stable.
-- Relies purely on existing sprites/fonts; no new external assets required.
+- All visual and mechanical implementations from Sprint 001-003 must be stable. Audio integration touches almost every file, so a stable foundation is required to avoid merge conflicts or wiring sounds to changing logic.

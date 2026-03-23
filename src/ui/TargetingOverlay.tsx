@@ -7,6 +7,8 @@ interface TargetingOverlayProps {
   gameState: GameState;
   onSelectTarget: (targetId: string) => void;
   onCancel: () => void;
+  onHoverControl: (targetId: string, input?: 'mouse' | 'focus') => void;
+  onSelectControl: () => void;
 }
 
 const targetLabel = (gameState: GameState, targetId: string): string => {
@@ -18,7 +20,7 @@ const targetLabel = (gameState: GameState, targetId: string): string => {
   return getDefinition(animal.animalId).name;
 };
 
-export const TargetingOverlay = ({ gameState, onSelectTarget, onCancel }: TargetingOverlayProps) => {
+export const TargetingOverlay = ({ gameState, onSelectTarget, onCancel, onHoverControl, onSelectControl }: TargetingOverlayProps) => {
   const targeting = gameState.night.targeting;
   if (!targeting) {
     return null;
@@ -34,14 +36,31 @@ export const TargetingOverlay = ({ gameState, onSelectTarget, onCancel }: Target
         <p>{copy.support}</p>
         <div className="target-list">
           {targets.map((targetId) => (
-            <button key={targetId} type="button" onClick={() => onSelectTarget(targetId)}>
+            <button
+              key={targetId}
+              type="button"
+              onFocus={() => onHoverControl(`target-${targetId}`, 'focus')}
+              onPointerEnter={(event) => onHoverControl(`target-${targetId}`, event.pointerType === 'mouse' ? 'mouse' : 'focus')}
+              onClick={() => {
+                onSelectControl();
+                onSelectTarget(targetId);
+              }}
+            >
               {targetLabel(gameState, targetId)}
             </button>
           ))}
           {targets.length === 0 ? <p>No valid targets.</p> : null}
         </div>
         {targeting.kind !== 'pin' ? (
-          <button type="button" onClick={onCancel}>
+          <button
+            type="button"
+            onFocus={() => onHoverControl('target-cancel', 'focus')}
+            onPointerEnter={(event) => onHoverControl('target-cancel', event.pointerType === 'mouse' ? 'mouse' : 'focus')}
+            onClick={() => {
+              onSelectControl();
+              onCancel();
+            }}
+          >
             Cancel
           </button>
         ) : null}

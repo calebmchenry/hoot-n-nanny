@@ -6,6 +6,8 @@ import { useAnimatedCounter, usePrefersReducedMotion } from './useAnimatedCounte
 interface NightSummaryModalProps {
   summary: NightSummary;
   onContinue: () => void;
+  onHoverControl: (targetId: string, input?: 'mouse' | 'focus') => void;
+  onSelectControl: () => void;
 }
 
 const applyEventToTotals = (
@@ -27,7 +29,7 @@ const applyEventToTotals = (
   return { ...totals, cash: Math.max(0, totals.cash - event.amount) };
 };
 
-export const NightSummaryModal = ({ summary, onContinue }: NightSummaryModalProps) => {
+export const NightSummaryModal = ({ summary, onContinue, onHoverControl, onSelectControl }: NightSummaryModalProps) => {
   const prefersReducedMotion = usePrefersReducedMotion();
   const [revealedCount, setRevealedCount] = useState(0);
   const [targetPop, setTargetPop] = useState(summary.popBefore);
@@ -124,13 +126,14 @@ export const NightSummaryModal = ({ summary, onContinue }: NightSummaryModalProp
 
       if (!tallyComplete) {
         event.preventDefault();
+        onSelectControl();
         skipTally();
       }
     };
 
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [tallyComplete]);
+  }, [onSelectControl, tallyComplete]);
 
   return (
     <div
@@ -140,6 +143,7 @@ export const NightSummaryModal = ({ summary, onContinue }: NightSummaryModalProp
       aria-label="Night Summary"
       onClick={(event) => {
         if (event.target === event.currentTarget && !tallyComplete) {
+          onSelectControl();
           skipTally();
         }
       }}
@@ -150,6 +154,7 @@ export const NightSummaryModal = ({ summary, onContinue }: NightSummaryModalProp
         data-tally-state={tallyComplete ? 'complete' : 'running'}
         onClick={() => {
           if (!tallyComplete) {
+            onSelectControl();
             skipTally();
           }
         }}
@@ -196,8 +201,11 @@ export const NightSummaryModal = ({ summary, onContinue }: NightSummaryModalProp
 
         <button
           type="button"
+          onFocus={() => onHoverControl('summary-continue', 'focus')}
+          onPointerEnter={(event) => onHoverControl('summary-continue', event.pointerType === 'mouse' ? 'mouse' : 'focus')}
           onClick={(event) => {
             event.stopPropagation();
+            onSelectControl();
             if (!tallyComplete) {
               skipTally();
               return;

@@ -1,42 +1,54 @@
-# Sprint 003 Selection — "Personality & Polish"
+# Sprint 004 Selection — "Sound of the Barn"
 
 ## Selected Backlog Items
 
 | # | Item | Priority |
 |---|------|----------|
-| 24 | Humor & Personality Pass | Low |
-| 25 | Animation Polish | Low |
+| 15 | Music — Barn Party Track | Medium |
+| 16 | Music — Shop Track | Medium |
+| 17 | SFX — Animal Entry Sounds | Medium |
+| 18 | SFX — Bust | Medium |
+| 19 | SFX — Scoring Jingle | Medium |
+| 20 | SFX — Purchase | Medium |
+| 21 | SFX — Activate Ability | Medium |
+| 22 | SFX — Win Fanfare | Medium |
+| 23 | SFX — UI Navigation | Medium |
 
 ## Rationale
 
-### Why these two items?
+### Why these nine items?
 
-With Sprint 002 completing the full game loop (night → shop → night → win), every remaining backlog item is polish, audio, or shipping infrastructure. Items 24 and 25 are both **polish passes** over the existing, complete game and share the same goal: making Hoot N' Nanny feel alive, charming, and finished — not just functional.
+With Sprint 003 completing personality and animation polish, every remaining medium-priority item is audio. Items 15–23 are the entire audio layer of the game: two music tracks and seven sound effect categories. They are the last content work before shipping infrastructure and final QA.
 
 ### Why they belong together
 
-**Shared surfaces.** Flavor text on animals and abilities (item 24) appears alongside the same UI elements getting animation polish (item 25) — entry animations, scoring tallies, phase transitions. Designing both together ensures they complement each other rather than collide.
+**Single domain.** All nine items are audio. They share the same technical surface — an audio system for loading, playing, looping, and mixing sounds. Building that system once and populating it with all audio in one sprint avoids repeated setup and integration work.
 
-**"Juice" synergy.** Animation without personality feels sterile. Personality without motion feels flat. A witty ability description that pops in with a satisfying animation lands better than either alone. The INTENT doc calls for "goofy, warm, scrappy" — achieving that requires both visual liveliness and written voice working in concert.
+**Consistent mix.** Music volume, SFX volume, and the interplay between them (e.g., the bust SFX cutting through the barn party track, the win fanfare replacing it) must be tuned holistically. Splitting audio across sprints would mean re-tuning the mix each time new sounds arrive.
 
-**No external dependencies.** Both items require only creative work on top of the existing codebase. No new assets need to be sourced, no new systems need to be built. They touch game presentation, not game logic.
+**Tone coherence.** The GAME_DESIGN doc specifies a "retro + country" audio feel across all music and SFX. Producing everything together ensures a unified sonic identity — the chiptune hoedown loop, the fiddle scoring jingle, and the rooster bust sound all need to feel like they come from the same game.
 
-**Minimizes context-switching.** Both items touch the same files and UI surfaces (animal cards, ability descriptions, phase transitions, shop interactions, scoring displays). One sprint avoids redundant passes through the same code.
+**No external dependencies.** Audio is purely additive presentation work on top of the complete, polished game loop. It doesn't block or depend on any other remaining item.
+
+**Completes medium priority.** After this sprint, all medium-priority backlog items are done. Only the two low-priority shipping items (CI/CD and Final QA) remain.
 
 ### What's excluded and why
 
-- **Audio (15–23):** Music and SFX form their own natural cluster requiring sourced or generated audio assets — a fundamentally different kind of work. No dependency on personality or animation; can follow in a later sprint.
-- **CI/CD (26):** Infrastructure, not gameplay. Independent of all content work.
-- **Final QA (27):** Explicitly a *final* pass. Should come last, after all content and polish is in place.
+- **GitHub Pages CI/CD (26):** Infrastructure, not gameplay content. Independent of audio work. Better as a small standalone task or bundled with Final QA.
+- **Final QA & Ship Polish (27):** Explicitly a *final* pass. Should come after all content — including audio — is in place so the QA pass covers the complete game.
 
 ### What this sprint delivers
 
 After this sprint:
 
-1. All animals and abilities have flavor text and witty descriptions
-2. UI copy throughout the game has personality and warmth matching the "goofy, warm, scrappy" tone
-3. Phase transitions (hootenanny → scoring → shop → hootenanny) are smooth and animated
-4. Animal entry into the barn has visual animation
-5. Scoring tally has a counting/reveal animation
-6. General "juice" — hover effects, button feedback, subtle motion — makes interactions feel responsive
-7. The game feels like it has a voice and personality, not just mechanics
+1. An upbeat chiptune hoedown loop plays during the Hootenanny phase
+2. A relaxed country/chiptune loop plays during the Shop phase
+3. Each animal type has a unique entry sound when entering the barn
+4. Busting triggers a record scratch / rooster crow sequence
+5. Scoring has a celebratory fiddle flourish jingle
+6. Shop purchases have a cash register / coin clink sound
+7. Activate abilities have a subtle pluck or chime
+8. Winning with 3 blue ribbons triggers a hoedown breakdown fanfare
+9. UI navigation (hover, select, navigate) has soft click / wooden tap feedback
+10. Volume controls or mute toggle let the player manage audio
+11. The game has a complete, cohesive "retro + country" soundscape

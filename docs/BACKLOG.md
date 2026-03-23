@@ -1,38 +1,7 @@
 # Hoot N' Nanny — Backlog
 
-Completed through Sprint 003 + validation implementation: items 1-25 (core playable loop, powers, scoring, shop phase, win condition, personality pass, animation polish, and foundational UX).
+Completed through Sprint 004 implementation: items 1-25 (core playable loop, powers, scoring, shop phase, win condition, personality pass, animation polish, and full procedural audio implementation).
 Remaining items are below.
-
----
-
-## MEDIUM PRIORITY
-
-### 15. Music — Barn Party Track
-Upbeat chiptune hoedown loop for the Hootenanny phase. Retro + country feel.
-
-### 16. Music — Shop Track
-Relaxed country/chiptune loop for the Trading Post phase.
-
-### 17. SFX — Animal Entry Sounds
-Unique short animal noise clip for each animal type entering the barn.
-
-### 18. SFX — Bust
-Record scratch or sudden silence followed by rooster crow (farmer waking up).
-
-### 19. SFX — Scoring Jingle
-Short celebratory fiddle flourish when tallying Pop/Cash.
-
-### 20. SFX — Purchase
-Cash register "cha-ching" or coin clink on shop purchase.
-
-### 21. SFX — Activate Ability
-Subtle pluck or chime when triggering an activate power.
-
-### 22. SFX — Win Fanfare
-Bigger celebratory hoedown breakdown tune for winning with 3 blue ribbons.
-
-### 23. SFX — UI Navigation
-Soft clicks or wooden tap sounds for hovering, selecting, and navigating slots.
 
 ---
 

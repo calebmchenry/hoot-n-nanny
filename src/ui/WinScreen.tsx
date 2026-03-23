@@ -7,9 +7,11 @@ import { AnimalSprite } from './AnimalSprite';
 interface WinScreenProps {
   gameState: GameState;
   onPlayAgain: () => void;
+  onHoverControl: (targetId: string, input?: 'mouse' | 'focus') => void;
+  onSelectControl: () => void;
 }
 
-export const WinScreen = ({ gameState, onPlayAgain }: WinScreenProps) => {
+export const WinScreen = ({ gameState, onPlayAgain, onHoverControl, onSelectControl }: WinScreenProps) => {
   const winners = gameState.lastNightSummary?.winningBlueRibbonIds ?? [];
   const playAgainRef = useRef<HTMLButtonElement | null>(null);
 
@@ -47,7 +49,18 @@ export const WinScreen = ({ gameState, onPlayAgain }: WinScreenProps) => {
           );
         })}
       </div>
-      <button type="button" className="win-play-again" onClick={onPlayAgain} data-testid="play-again" ref={playAgainRef}>
+      <button
+        type="button"
+        className="win-play-again"
+        onFocus={() => onHoverControl('win-play-again', 'focus')}
+        onPointerEnter={(event) => onHoverControl('win-play-again', event.pointerType === 'mouse' ? 'mouse' : 'focus')}
+        onClick={() => {
+          onSelectControl();
+          onPlayAgain();
+        }}
+        data-testid="play-again"
+        ref={playAgainRef}
+      >
         Play Again
       </button>
     </section>

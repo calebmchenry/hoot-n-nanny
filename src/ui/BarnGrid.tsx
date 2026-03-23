@@ -16,11 +16,13 @@ interface BarnGridProps {
   gameState: GameState;
   selectedSlotIndex: number;
   onSelectSlot: (slotIndex: number) => void;
+  onHoverControl: (targetId: string, input?: 'mouse' | 'focus') => void;
+  onSelectControl: () => void;
 }
 
 const uniq = (items: string[]): string[] => [...new Set(items)];
 
-export const BarnGrid = ({ gameState, selectedSlotIndex, onSelectSlot }: BarnGridProps) => {
+export const BarnGrid = ({ gameState, selectedSlotIndex, onSelectSlot, onHoverControl, onSelectControl }: BarnGridProps) => {
   const slots = useMemo(() => buildBarnSlots(gameState), [gameState]);
   const guestGroups = useMemo(() => buildGuestGroups(gameState), [gameState]);
   const [enteredDisplayIds, setEnteredDisplayIds] = useState<string[]>([]);
@@ -176,7 +178,12 @@ export const BarnGrid = ({ gameState, selectedSlotIndex, onSelectSlot }: BarnGri
             type="button"
             key={slot.slotIndex}
             className={className}
-            onClick={() => onSelectSlot(slot.slotIndex)}
+            onFocus={() => onHoverControl(`barn-slot-${slot.slotIndex}`, 'focus')}
+            onPointerEnter={(event) => onHoverControl(`barn-slot-${slot.slotIndex}`, event.pointerType === 'mouse' ? 'mouse' : 'focus')}
+            onClick={() => {
+              onSelectControl();
+              onSelectSlot(slot.slotIndex);
+            }}
             data-slot-index={slot.slotIndex}
             data-testid={slot.slotIndex === 1 ? 'door-slot' : `barn-slot-${slot.slotIndex}`}
             data-attention={abilityAttention ? 'true' : undefined}

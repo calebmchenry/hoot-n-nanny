@@ -17,6 +17,8 @@ interface InspectorPanelProps {
   onInvite: () => void;
   onCallItANight: () => void;
   onUseAbility: (sourceId: string) => void;
+  onHoverControl: (targetId: string, input?: 'mouse' | 'focus') => void;
+  onSelectControl: () => void;
 }
 
 export const InspectorPanel = ({
@@ -24,7 +26,9 @@ export const InspectorPanel = ({
   selectedSlotIndex,
   onInvite,
   onCallItANight,
-  onUseAbility
+  onUseAbility,
+  onHoverControl,
+  onSelectControl
 }: InspectorPanelProps) => {
   const slots = buildBarnSlots(gameState);
   const selectedSlot = slots[selectedSlotIndex] ?? slots[0];
@@ -53,7 +57,16 @@ export const InspectorPanel = ({
             ))}
           {Object.values(counts).every((count) => count === 0) ? <p>The farm is empty.</p> : null}
         </div>
-        <button type="button" onClick={onCallItANight} data-testid="call-night">
+        <button
+          type="button"
+          onFocus={() => onHoverControl('inspector-call-night', 'focus')}
+          onPointerEnter={(event) => onHoverControl('inspector-call-night', event.pointerType === 'mouse' ? 'mouse' : 'focus')}
+          onClick={() => {
+            onSelectControl();
+            onCallItANight();
+          }}
+          data-testid="call-night"
+        >
           Call It a Night
         </button>
       </aside>
@@ -67,10 +80,29 @@ export const InspectorPanel = ({
         <p className="inspector-quip">{nightQuip}</p>
         <p>{UI_COPY.doorHint}</p>
         {atCapacityWithAbilities ? <p className="inspector-note">{UI_COPY.abilityReadyHint}</p> : null}
-        <button type="button" onClick={onInvite} disabled={!canInvite} data-testid="invite-button">
+        <button
+          type="button"
+          onFocus={() => onHoverControl('inspector-invite', 'focus')}
+          onPointerEnter={(event) => onHoverControl('inspector-invite', event.pointerType === 'mouse' ? 'mouse' : 'focus')}
+          onClick={() => {
+            onSelectControl();
+            onInvite();
+          }}
+          disabled={!canInvite}
+          data-testid="invite-button"
+        >
           Invite Guest
         </button>
-        <button type="button" onClick={onCallItANight} data-testid="call-night">
+        <button
+          type="button"
+          onFocus={() => onHoverControl('inspector-call-night', 'focus')}
+          onPointerEnter={(event) => onHoverControl('inspector-call-night', event.pointerType === 'mouse' ? 'mouse' : 'focus')}
+          onClick={() => {
+            onSelectControl();
+            onCallItANight();
+          }}
+          data-testid="call-night"
+        >
           Call It a Night
         </button>
       </aside>
@@ -103,12 +135,32 @@ export const InspectorPanel = ({
           Pop: {definition.power === 'encore' ? resident.encorePop : definition.currencies.pop} / Cash: {definition.currencies.cash}
         </p>
         {activatePower && !used ? (
-          <button type="button" onClick={() => onUseAbility(primaryId)} data-testid="use-ability">
+          <button
+            type="button"
+            onFocus={() => onHoverControl(`inspector-ability-${primaryId}`, 'focus')}
+            onPointerEnter={(event) =>
+              onHoverControl(`inspector-ability-${primaryId}`, event.pointerType === 'mouse' ? 'mouse' : 'focus')
+            }
+            onClick={() => {
+              onSelectControl();
+              onUseAbility(primaryId);
+            }}
+            data-testid="use-ability"
+          >
             Use {powerCopy.label}
           </button>
         ) : null}
         {activatePower && used ? <p className="inspector-note">{UI_COPY.abilitySpentHint}</p> : null}
-        <button type="button" onClick={onCallItANight} data-testid="call-night">
+        <button
+          type="button"
+          onFocus={() => onHoverControl('inspector-call-night', 'focus')}
+          onPointerEnter={(event) => onHoverControl('inspector-call-night', event.pointerType === 'mouse' ? 'mouse' : 'focus')}
+          onClick={() => {
+            onSelectControl();
+            onCallItANight();
+          }}
+          data-testid="call-night"
+        >
           Call It a Night
         </button>
       </aside>
@@ -120,7 +172,16 @@ export const InspectorPanel = ({
       <h2>Inspector</h2>
       <p className="inspector-quip">{nightQuip}</p>
       <p>{UI_COPY.inspectorIdle}</p>
-      <button type="button" onClick={onCallItANight} data-testid="call-night">
+      <button
+        type="button"
+        onFocus={() => onHoverControl('inspector-call-night', 'focus')}
+        onPointerEnter={(event) => onHoverControl('inspector-call-night', event.pointerType === 'mouse' ? 'mouse' : 'focus')}
+        onClick={() => {
+          onSelectControl();
+          onCallItANight();
+        }}
+        data-testid="call-night"
+      >
         Call It a Night
       </button>
     </aside>

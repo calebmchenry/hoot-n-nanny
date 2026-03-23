@@ -5,6 +5,7 @@ interface BarnUpgradeCardProps {
   maxed: boolean;
   focused: boolean;
   onFocusCard: () => void;
+  onHoverControl: (targetId: string, input?: 'mouse' | 'focus') => void;
   onPurchase: () => void;
   buttonRef?: (node: HTMLButtonElement | null) => void;
 }
@@ -16,6 +17,7 @@ export const BarnUpgradeCard = ({
   maxed,
   focused,
   onFocusCard,
+  onHoverControl,
   onPurchase,
   buttonRef
 }: BarnUpgradeCardProps) => {
@@ -25,8 +27,14 @@ export const BarnUpgradeCard = ({
     <button
       type="button"
       className={`upgrade-card${disabled ? ' dimmed' : ''}${focused ? ' focused' : ''}`}
-      onFocus={onFocusCard}
-      onMouseEnter={onFocusCard}
+      onFocus={() => {
+        onFocusCard();
+        onHoverControl('shop-capacity', 'focus');
+      }}
+      onPointerEnter={(event) => {
+        onFocusCard();
+        onHoverControl('shop-capacity', event.pointerType === 'mouse' ? 'mouse' : 'focus');
+      }}
       onClick={onPurchase}
       disabled={disabled}
       data-testid="capacity-upgrade"
