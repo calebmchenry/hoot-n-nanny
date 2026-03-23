@@ -3,4 +3,4 @@ dist
 playwright-report
 test-results
 .vite
-.nectar/gardens/.nectar/cocoons
+.nectar/**/cocoons
